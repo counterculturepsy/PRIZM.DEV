@@ -1,158 +1,55 @@
-# PRIZM.DEV | Developer Collaboration Handoff
+# PRIZM.DEV
 
-## Welcome to the PRIZM.DEV Development Team
+PRIZM.DEV is a workspace-safe client-acquisition operating system for developers and digital agencies. Its product principle is simple: **do not give users more leads; give them better opportunities.**
 
-You are joining PRIZM.DEV as a collaborating full-stack developer, working alongside HOAX1G and ChatGPT/Codex.
+This repository contains M0 architecture through M7, the M8 campaign safety control plane, and the M9 analytics foundation. Database-backed identity, isolated workspaces, onboarding, roles, bounded company imports, provenance, durable audit jobs, bounded static analysis, evidence reports, deterministic opportunity rules, explainable lead scores, tenant-safe CRM, evidence-grounded strategy/outreach drafts, and immutable human-approved proposal snapshots are implemented. Campaign preparation adds templates, sequence plans, deduplicated recipient enrollments, suppression readiness and human review under `/app/campaigns`. The provider-independent delivery control plane adds immutable message snapshots, leased jobs, runtime caps, hashed unsubscribe links, and replay-safe normalized event records. Tenant-safe reports add discovery/source, current pipeline, proposal, won-value, and cycle-time aggregates under `/app/reports/*`. No approved provider adapter or live send path exists. Audit, AI, campaign delivery, external discovery, recognized-revenue reporting, public proposal delivery, signatures, payments, and calendar integrations remain gated capabilities.
 
-We are jointly developing an advanced SaaS platform for business discovery, website analysis, opportunity intelligence, CRM, AI-assisted sales, proposals, campaigns, and analytics.
+## Stack
 
-**Our objective:** Build, improve, test, and launch PRIZM.DEV as a professional, scalable, production-ready application.
+- Next.js App Router, React, and strict TypeScript
+- Tailwind CSS with shadcn-compatible design tokens
+- PostgreSQL and Drizzle ORM
+- Auth.js/NextAuth authentication foundation
+- Zod environment and boundary validation
+- Vitest and Playwright
+- GitHub Actions CI
 
-This is an existing project. We are continuing development, not starting over.
+## Start locally
 
-## GitHub Repository
+1. Install Node.js 22+ and pnpm 11+.
+2. Copy `.env.example` to `.env.local` and replace every development placeholder.
+3. Start PostgreSQL and create the configured database.
+4. Run `pnpm install`.
+5. Run `pnpm db:generate` and `pnpm db:migrate`.
+6. Run `pnpm dev` and open `http://localhost:3000`.
 
-**Repository:** https://github.com/counterculturepsy/PRIZM.DEV
+Do not enable `WEBSITE_AUDIT_ENABLED` for ordinary local UI work. Approved operators can process one queued audit with `pnpm audit:worker` only after the egress, crawler identity, monitoring, and policy gates in `SECURITY.md` are satisfied.
 
-**Owner:** HOAX1G  
-**Default branch:** `main`  
-**Current development reference:** `codex/prizm-m8-campaign-foundation`
+Do not enable `AI_GENERATION_ENABLED` or add a live provider key merely for local validation. M6 tests use mocked transport. External generation additionally requires an explicit compatible model, an enabled workspace policy, data-processing and lawful-use approval, authorized staging evaluation, monitoring, and production governance.
 
-Important: The `main` branch currently contains only a minimal README. Most application development exists on milestone branches. Inspect the branches before beginning work.
+`CAMPAIGN_DELIVERY_ENABLED` is intentionally rejected when true in this release. The delivery worker/service foundation is testable only with injected fake providers; a live adapter requires provider approval, a verified sender, encrypted credentials, signed webhooks, monitoring and authorized staging validation.
 
-You have been invited to collaborate through GitHub.
+OAuth sign-in is exposed only when a complete provider pair is configured. The protected application shell lives at `/app`; a first-time user creates a workspace and completes onboarding before importing an approved company CSV at `/app/discover/search`. Materialized M4 recommendations are available at `/app/discover/opportunities`; they can become M5 leads without initiating outreach. CRM work is available under `/app/leads` and `/app/crm/*`. M6 review-only drafts live under `/app/ai/*`, and M7 proposal versions live under `/app/proposals`; neither area sends messages. M9 reports are read-only aggregates. Won deal value is deliberately not described as recognized revenue because no invoice/payment ledger exists before M10.
 
-## Technology Stack
+## Collaboration workflow
 
-- Next.js 16 / React 19
-- TypeScript
-- Tailwind CSS 4
-- PostgreSQL / Drizzle ORM
-- Auth.js / NextAuth
-- Zod
-- Vitest / Playwright
-- pnpm / Node.js 22+
-- GitHub Actions
+- Inspect the current repository, branches, and working tree before editing.
+- Coordinate ownership of shared files, schemas, migrations, and infrastructure.
+- Create focused feature or fix branches and keep changes reviewable.
+- Never force-push shared branches or overwrite another developer's uncommitted work.
+- Preserve the existing stack, application architecture, branding, tenant isolation, migrations, and persistent data.
+- Validate inputs and authorization boundaries, add tests for behavior changes, and never commit secrets.
+- Submit pull requests for review and report exactly which checks passed or failed.
+- Do not modify production data, enable outbound campaigns, or merge into `main` without explicit agreement.
 
-Preserve the existing stack and application architecture.
+## Quality gates
 
-## Current Development Progress
+```bash
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+pnpm test:e2e
+```
 
-The repository documents the following milestones:
-
-- **M0–M1:** Application foundation, authentication, workspaces, and onboarding.
-- **M2–M3:** Business discovery, prospect database, and website auditing.
-- **M4–M5:** Opportunity intelligence, lead scoring, and CRM.
-- **M6–M7:** AI-assisted sales drafts and proposal generation.
-- **M8:** Campaign preparation and delivery safety infrastructure.
-- **M9:** Analytics and reporting foundation.
-- **M10–M11:** Billing and production hardening remain planned.
-
-These milestones require code and test verification before being considered production-ready.
-
-## Collaboration Workflow
-
-Both developers will work from the same GitHub repository.
-
-### Git Rules
-
-1. Inspect the repository before editing.
-2. Do not assume `main` is the latest application.
-3. Coordinate on the integration branch before starting.
-4. Create a separate feature branch for your work.
-5. Never force-push shared branches.
-6. Never overwrite another developer's uncommitted work.
-7. Use descriptive commit messages.
-8. Submit pull requests for review.
-9. Do not merge into `main` without agreement.
-10. Keep changes small and easy to review.
-
-Suggested branch naming:
-
-- `feature/dashboard-improvements`
-- `feature/discovery-enhancements`
-- `feature/crm-improvements`
-- `fix/authentication`
-- `test/integration-coverage`
-
-### Code Quality
-
-- Write clean, maintainable TypeScript.
-- Reuse existing components and services.
-- Preserve existing branding and UI conventions.
-- Maintain workspace/tenant isolation.
-- Protect database migrations and existing data.
-- Use responsive, accessible design.
-- Validate inputs and protect API boundaries.
-- Add tests for new features and bug fixes.
-- Never commit secrets or environment credentials.
-
-## Initial Assignment
-
-Before making any changes:
-
-1. Clone the repository.
-2. Inspect the existing milestone branches.
-3. Identify the latest complete application.
-4. Read `README.md`, `ARCHITECTURE.md`, `DATABASE.md`, `ROADMAP.md`, and `SECURITY.md` on the development branch.
-5. Review the source structure, routes, components, and database schema.
-6. Check available tests and CI configuration.
-7. Report any incomplete functionality or architectural concerns.
-
-Do not modify production data, enable outbound campaigns, or perform destructive Git operations.
-
-## Shared Development Responsibilities
-
-We will coordinate work across these areas:
-
-| Area | Responsibilities |
-|---|---|
-| Frontend | Dashboard, UI/UX, responsiveness, accessibility |
-| Backend | APIs, business logic, authentication |
-| Database | Schema, queries, migrations, tenant isolation |
-| Discovery | Company imports, searches, filtering |
-| Auditing | Website analysis, evidence, security |
-| CRM | Leads, pipeline, contacts, tasks |
-| AI | Sales drafts, recommendations, provider integration |
-| QA | Unit, integration, E2E and regression tests |
-| DevOps | CI/CD, deployment, monitoring |
-
-Assignments will be agreed upon before implementation to avoid conflicting changes.
-
-## Communication and Progress
-
-When working on a feature, communicate:
-
-- What you are working on.
-- Which branch and files you are changing.
-- Any shared components or schemas affected.
-- What has been completed.
-- Which tests passed or failed.
-- What needs review or integration.
-
-We will use our shared ChatGPT development conversation for architecture discussions, debugging, decisions, code reviews, and progress tracking.
-
-GitHub remains the source of truth for code.
-
-## First Action
-
-**Start with a read-only inspection of the PRIZM.DEV repository and its development branches.**
-
-Then introduce yourself in the shared development chat with:
-
-1. Your preferred development responsibilities.
-2. Your local development environment.
-3. Which area of PRIZM.DEV you would like to work on first.
-4. Any issues you identified during repository inspection.
-
-Do not begin major code changes until we agree on branch ownership and the first assignments.
-
----
-
-**PRIZM.DEV Development Team**
-
-Project Lead: HOAX1G  
-Collaborating Developer: GitHub Invited  
-AI Development Support: ChatGPT / Codex
-
-**Our goal is one shared codebase, coordinated development, reliable testing, and a production-ready PRIZM.DEV platform.**
+See [ARCHITECTURE.md](ARCHITECTURE.md), [DATABASE.md](DATABASE.md), [SECURITY.md](SECURITY.md), [ENVIRONMENT.md](ENVIRONMENT.md), and [ROADMAP.md](ROADMAP.md) before extending the system.

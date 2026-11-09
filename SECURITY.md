@@ -1,21 +1,45 @@
-# Security Policy
+# Security baseline
 
-## Supported Versions
+## M0 controls
 
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
+- Strict environment validation and server-only secrets
+- Auth.js sessions with configured secret and protected server routes
+- Branded workspace authorization scope and deny-by-default roles
+- Tenant columns, composite uniqueness, and scoped query conventions
+- Zod at trust boundaries
+- Security response headers and disabled framework signature
+- Immutable audit-log foundation
+- Hashed 256-bit invitation tokens, seven-day expiry, intended-email matching, and existing-member downgrade prevention
+- Dependency lockfile and least-privilege CI permissions
+- Bounded CSV ingestion (1 MB, 500 rows, strict headers and field lengths) with no automatic crawling
+- Deterministic per-workspace company/source deduplication and provenance labels
+- Audit URL allowlisting, public-IP pinning, private/reserved address denial, and redirect revalidation
+- Robots-aware single-page fetches with strict time, redirect, content-type, and byte limits
+- Raw website HTML is analyzed in memory and never persisted
+- Durable audit leases, bounded retries, sanitized error codes, and worker disabled by default
+- Deterministic opportunity rules, relational evidence provenance, nullable catalogue-backed pricing, and composite tenant constraints
+- Tenant-scoped CRM references, attributed contact entry, normalized suppression records, transactional activity/audit writes, and read-only Viewer enforcement
+- Disabled-by-default AI at server and workspace levels, redacted bounded evidence snapshots, strict structured output, evidence-ID grounding, quota reservation, sanitized failures, and mandatory audited human review with no send path
+- Tenant-scoped append-only proposal versions, bounded integer money calculations, server-authoritative currency/totals, conditional Owner/Admin approval, and no public share, send, signature or payment path
+- Immutable campaign message snapshots, stable provider idempotency keys, leased claims, atomic daily reservations, pre-send suppression rechecks, one-way unsubscribe-token hashes, replay-safe normalized events, and fail-closed delivery configuration
+- Tenant-filtered aggregate analytics, privileged deal-value access, versioned definitions, non-additive source caveats, currency separation, and no contact/message payload exposure
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+## Required before production
 
-## Reporting a Vulnerability
+M6 is not production-ready. Before launch: provision managed PostgreSQL, configure and live-test OAuth, add rate limiting and explicit origin review for mutations, approve audit-worker egress and DNS controls, publish a crawler contact/policy, configure scheduling and monitoring, validate scoring and CRM workflows against realistic authorized staging data, review robots/terms/legal policy, select any external discovery provider contractually, establish contact-data retention/lawful basis and subject-rights workflows, approve an AI model/provider and data-processing basis, run an authorized staging evaluation, monitor request budgets and provider failures, add encrypted integration-token storage, CSP, backups and restore drills, privacy workflows, abuse controls, and an external tenant-isolation/privacy review.
 
-Use this section to tell people how to report a vulnerability.
+## Authorization rules
 
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+Authentication is not authorization. The server resolves active membership for every tenant request. Owner/Admin manage workspace configuration; Sales handles CRM/outreach within policy; Developer handles technical audits; Viewer is read-only. High-risk actions require explicit capability checks and audit records.
+
+## Outreach and data use
+
+Only Owner/Admin/Sales may prepare campaigns; Owner/Admin alone review and stage immutable delivery records. Service mutations revalidate active role/membership. Enrollment checks contact flags and workspace-wide normalized email suppression; review and the worker recheck suppression and address changes. Plain-text templates render without HTML execution or interpolation. Public unsubscribe tokens are never stored raw, expire, are atomically single-use and expose no address. Provider events must be signature-verified by a future adapter before normalized ingestion; raw payloads are not retained. The runtime rejects enabled delivery and ships no live provider. Approved provider/sender, encrypted credentials, provider-specific signature verification, monitoring, staging validation and independent policy review remain mandatory before any send.
+
+Only compliant/public APIs, user imports, and permissibly public data sources may be used. No uncontrolled scraping. Store source attribution, honour suppression/opt-out state, deduplicate, rate-limit, and require human review. POPIA/GDPR readiness is a design requirement, not a legal-compliance claim.
+
+Report vulnerabilities privately to the repository owner; do not open a public issue containing exploit details or data.
+
+## Analytics privacy and authorization
+
+M9 reports resolve active membership server-side and every aggregate includes a workspace predicate. Sales/lead reports expose aggregate operational counts only. Deal-value reporting is Owner/Admin-only and is hidden from other roles. Reports do not include contact fields, message bodies, source snapshots, or raw provider payloads. Exact aggregate queries prevent misleading partial totals; explicit metric/version/timezone/currency labels prevent ambiguous interpretation. Future tracking, exports, cohort events, or a warehouse require separate privacy, retention, abuse, and tenant-isolation review.
