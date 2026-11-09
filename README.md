@@ -31,6 +31,17 @@ Do not enable `AI_GENERATION_ENABLED` or add a live provider key merely for loca
 
 OAuth sign-in is exposed only when a complete provider pair is configured. The protected application shell lives at `/app`; a first-time user creates a workspace and completes onboarding before importing an approved company CSV at `/app/discover/search`. Materialized M4 recommendations are available at `/app/discover/opportunities`; they can become M5 leads without initiating outreach. CRM work is available under `/app/leads` and `/app/crm/*`. M6 review-only drafts live under `/app/ai/*`, and M7 proposal versions live under `/app/proposals`; neither area sends messages. M9 reports are read-only aggregates. Won deal value is deliberately not described as recognized revenue because no invoice/payment ledger exists before M10.
 
+## Collaboration workflow
+
+- Inspect the current repository, branches, and working tree before editing.
+- Coordinate ownership of shared files, schemas, migrations, and infrastructure.
+- Create focused feature or fix branches and keep changes reviewable.
+- Never force-push shared branches or overwrite another developer's uncommitted work.
+- Preserve the existing stack, application architecture, branding, tenant isolation, migrations, and persistent data.
+- Validate inputs and authorization boundaries, add tests for behavior changes, and never commit secrets.
+- Submit pull requests for review and report exactly which checks passed or failed.
+- Do not modify production data, enable outbound campaigns, or merge into `main` without explicit agreement.
+
 ## Quality gates
 
 ```bash
