@@ -4,6 +4,10 @@
 
 - Strict environment validation and server-only secrets
 - Auth.js sessions with configured secret and protected server routes
+- Durable account- and trusted-edge-IP rate limits for login, registration, verification and reset flows using HMAC-pseudonymized identifiers; blocked responses include `Retry-After`, successful login clears its account bucket, and authentication sessions expire after 12 hours
+- Expiring, single-use email-verification and password-reset tokens stored only as SHA-256 hashes; password reset increments the user's authentication version and invalidates existing sessions
+- Pseudonymized authentication security events without passwords, raw action tokens, email addresses or IP addresses
+- Same-origin checks on authentication mutations; forwarded client IPs are ignored unless the request is running behind Vercel's trusted edge
 - Branded workspace authorization scope and deny-by-default roles
 - Tenant columns, composite uniqueness, and scoped query conventions
 - Zod at trust boundaries
@@ -26,7 +30,7 @@
 
 ## Required before production
 
-M6 is not production-ready. Before launch: provision managed PostgreSQL, configure and live-test OAuth, add rate limiting and explicit origin review for mutations, approve audit-worker egress and DNS controls, publish a crawler contact/policy, configure scheduling and monitoring, validate scoring and CRM workflows against realistic authorized staging data, review robots/terms/legal policy, select any external discovery provider contractually, establish contact-data retention/lawful basis and subject-rights workflows, approve an AI model/provider and data-processing basis, run an authorized staging evaluation, monitor request budgets and provider failures, add encrypted integration-token storage, CSP, backups and restore drills, privacy workflows, abuse controls, and an external tenant-isolation/privacy review.
+The application is not production-ready. Before launch: integrate and approve a transactional email provider, enforce verified-email sign-in only after delivery is proven, apply and validate migrations through a controlled staging promotion, configure and live-test OAuth, establish authentication-event retention/alerting, verify trusted-edge behavior in preview, approve audit-worker egress and DNS controls, publish a crawler contact/policy, configure scheduling and monitoring, validate scoring and CRM workflows against realistic authorized staging data, review robots/terms/legal policy, select any external discovery provider contractually, establish contact-data retention/lawful basis and subject-rights workflows, approve an AI model/provider and data-processing basis, run an authorized staging evaluation, monitor request budgets and provider failures, add encrypted integration-token storage, CSP, backups and restore drills, privacy workflows, abuse controls, and an external tenant-isolation/privacy review.
 
 ## Authorization rules
 
