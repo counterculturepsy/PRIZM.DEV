@@ -13,6 +13,8 @@ import {
   leadScores,
   opportunities,
   opportunityEvidence,
+  opportunityServiceMappings,
+  opportunityServiceRecommendations,
   services,
   users,
   websiteAudits,
@@ -61,6 +63,7 @@ describe("opportunity intelligence materialization", () => {
       normalizedOrigin: "https://alpha-hotel.example",
     }).returning({ id: websites.id });
     if (!service || !website) throw new Error("Service or website fixture was not created");
+    await db.insert(opportunityServiceMappings).values({ workspaceId: alpha.id, opportunityType: "accessibility_remediation", serviceId: service.id, isPreferred: true });
     const [audit, otherAudit] = await db.insert(websiteAudits).values([
       { workspaceId: alpha.id, websiteId: website.id, requestedByUserId: user.id, status: "completed", authorizationBasis: "test", completedAt: new Date("2026-10-17T10:00:00Z") },
       { workspaceId: alpha.id, websiteId: website.id, requestedByUserId: user.id, status: "completed", authorizationBasis: "test", completedAt: new Date("2026-10-16T10:00:00Z") },
@@ -133,6 +136,10 @@ describe("opportunity intelligence materialization", () => {
       currency: "ZAR",
       confidence: "high",
     });
+    expect(storedOpportunities.find((item) => item.type === "security_hardening")).toMatchObject({ serviceId: null, estimatedValueMinMinor: null, currency: null });
+    const storedRecommendations = await db.select().from(opportunityServiceRecommendations).where(eq(opportunityServiceRecommendations.workspaceId, alpha.id));
+    expect(storedRecommendations).toHaveLength(1);
+    expect(storedRecommendations[0]).toMatchObject({ serviceId: service.id, serviceName: "Accessibility audit", isPreferred: true, rank: 1, priceStatus: "configured", currency: "ZAR" });
 
     const { getCompanyOpportunityIntelligence, listOpportunityFeed } = await import("./queries");
     const alphaScope = createWorkspaceScope({ workspaceId: alpha.id, userId: user.id, role: "developer" });

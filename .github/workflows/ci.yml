@@ -12,10 +12,25 @@ jobs:
   quality:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: prizm
+          POSTGRES_PASSWORD: prizm
+          POSTGRES_DB: prizm_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U prizm -d prizm_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       NEXTAUTH_URL: http://127.0.0.1:3100
       AUTH_SECRET: ci-only-secret-that-is-at-least-32-characters
-      DATABASE_URL: postgresql://prizm:prizm@127.0.0.1:5432/prizm_ci
+      DATABASE_URL: postgresql://prizm:prizm@127.0.0.1:5432/prizm_e2e
+      E2E_DATABASE_URL: postgresql://prizm:prizm@127.0.0.1:5432/prizm_e2e
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -29,6 +44,7 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm db:migrate
       - run: pnpm build
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e

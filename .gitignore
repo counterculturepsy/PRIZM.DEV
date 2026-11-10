@@ -9,9 +9,16 @@ test-results/
 .env.local
 .env.*.local
 !.env.example
+# Local credentials and key material
+key.txt
+*.pem
+*.key
 *.log
 .idea/
 .vscode/
 .DS_Store
 Thumbs.db
 *.tsbuildinfo
+
+.vercel
+.env*

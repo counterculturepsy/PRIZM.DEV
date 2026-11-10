@@ -7,6 +7,8 @@ import type { FormState } from "@/app/app/actions";
 import { CsvImportError, MAX_CSV_BYTES } from "@/modules/prospecting/csv";
 import { getDatabase } from "@/server/db";
 import { auditLogs, savedSearches } from "@/server/db/schema";
+import { DiscoveryProviderError } from "@/modules/prospecting/providers";
+import { DiscoveryRateLimitedError, DiscoveryUnavailableError, runCompanyDiscovery } from "@/server/prospecting/discovery";
 import { importCompanyCsv } from "@/server/prospecting/imports";
 import { getWorkspaceContext } from "@/server/workspaces/context";
 
@@ -36,6 +38,22 @@ export async function importCompanyCsvAction(_state: FormState, formData: FormDa
     return { status: "success", message: `Processed ${result.rows} rows: ${result.created} created and ${result.updated} updated.` };
   } catch (error) {
     if (error instanceof CsvImportError) return { status: "error", message: error.message };
+    throw error;
+  }
+}
+
+export async function runCompanyDiscoveryAction(_state: FormState, formData: FormData): Promise<FormState> {
+  const { scope } = await getWorkspaceContext("write");
+  try {
+    const outcome = await runCompanyDiscovery(scope, { industry: text(formData, "industry"), city: text(formData, "city"), province: text(formData, "province") });
+    revalidatePath("/app");
+    revalidatePath("/app/discover/search");
+    const skipped = outcome.skipped > 0 ? `, ${outcome.skipped} skipped` : "";
+    return { status: "success", message: `Found ${outcome.found}: ${outcome.created} new and ${outcome.alreadyKnown} already in this workspace${skipped}. Source: ${outcome.providerName}, ${outcome.attribution}.` };
+  } catch (error) {
+    if (error instanceof DiscoveryUnavailableError || error instanceof DiscoveryRateLimitedError || error instanceof DiscoveryProviderError) {
+      return { status: "error", message: error.message };
+    }
     throw error;
   }
 }

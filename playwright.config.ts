@@ -1,9 +1,15 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const port = Number(process.env.PLAYWRIGHT_PORT ?? 3100);
+const e2eDatabaseUrl = process.env.E2E_DATABASE_URL;
 
 if (!Number.isInteger(port) || port < 1 || port > 65_535) {
   throw new Error("PLAYWRIGHT_PORT must be a valid TCP port.");
+}
+if (!e2eDatabaseUrl) throw new Error("E2E_DATABASE_URL must identify the isolated local test database.");
+const parsedDatabaseUrl = new URL(e2eDatabaseUrl);
+if (!["127.0.0.1", "localhost"].includes(parsedDatabaseUrl.hostname) || parsedDatabaseUrl.pathname !== "/prizm_e2e") {
+  throw new Error("E2E_DATABASE_URL must identify the isolated loopback prizm_e2e database.");
 }
 
 export default defineConfig({
@@ -25,7 +31,9 @@ export default defineConfig({
     env: {
       NEXTAUTH_URL: `http://127.0.0.1:${port}`,
       AUTH_SECRET: "e2e-only-secret-that-is-at-least-32-characters",
-      DATABASE_URL: "postgresql://prizm:prizm@127.0.0.1:5432/prizm_e2e",
+      DATABASE_URL: e2eDatabaseUrl,
+      PASSWORD_AUTH_ENABLED: "true",
+      DEV_AUTH_BYPASS: "false",
     },
   },
 });

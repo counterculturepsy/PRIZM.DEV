@@ -16,9 +16,25 @@ export const proposalRevisionSchema = proposalDraftSchema.omit({ leadId: true, r
 export const proposalApprovalSchema = z.object({ proposalId: z.uuid(), note: boundedText(2, 1000) });
 
 export type ProposalLineItem = z.infer<typeof proposalLineItemSchema> & { lineTotalMinor: number };
+export type ProposalSourceEvidence = Readonly<{
+  opportunity: Readonly<{
+    id: string; auditId: string; type: string; title: string; summary: string; businessImpact: string;
+    recommendedSolution: string; confidence: string; estimatedValueMinMinor: number | null;
+    estimatedValueMaxMinor: number | null; currency: string | null; generationVersion: string;
+  }>;
+  findings: ReadonlyArray<Readonly<{
+    id: string; title: string; category: string; severity: string; summary: string; evidence: string;
+    sourceUrl: string; confidence: string; observedAt: string;
+  }>>;
+  recommendations: ReadonlyArray<Readonly<{
+    serviceId: string | null; serviceName: string; isPreferred: boolean; rank: number; priceStatus: string;
+    startingPriceMinor: number | null; averagePriceMinor: number | null; currency: string | null;
+  }>>;
+}>;
 export type ProposalSnapshot = Readonly<{
   title: string; summary: string; scope: string; deliverables: string; assumptions: string; exclusions: string; timeline: string;
   currency: string; items: ProposalLineItem[]; subtotalMinor: number; discountMinor: number; totalMinor: number;
+  sourceEvidence?: ProposalSourceEvidence;
 }>;
 
 export function parseMajorToMinor(value: unknown): number {

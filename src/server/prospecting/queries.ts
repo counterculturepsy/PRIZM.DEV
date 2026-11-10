@@ -6,13 +6,27 @@ import { tenantWhere } from "@/server/db/tenant";
 
 export type CompanyFilters = Readonly<{ q?: string; industry?: string; city?: string; province?: string }>;
 
-export function listCompanies(scope: WorkspaceScope, filters: CompanyFilters = {}) {
+export const COMPANY_PAGE_SIZE = 24;
+
+function companyConditions(scope: WorkspaceScope, filters: CompanyFilters) {
   const conditions = [tenantWhere(companies.workspaceId, scope)];
   if (filters.q) conditions.push(or(ilike(companies.name, `%${filters.q}%`), ilike(companies.domain, `%${filters.q}%`))!);
   if (filters.industry) conditions.push(eq(companies.industry, filters.industry));
   if (filters.city) conditions.push(eq(companies.city, filters.city));
   if (filters.province) conditions.push(eq(companies.province, filters.province));
-  return getDatabase().select().from(companies).where(and(...conditions)).orderBy(asc(companies.name)).limit(100);
+  return and(...conditions);
+}
+
+/** One page of matching companies. `page` starts at 1; ordering is stable (name, then id). */
+export function listCompanies(scope: WorkspaceScope, filters: CompanyFilters = {}, page = 1) {
+  const offset = (Math.max(1, Math.floor(page)) - 1) * COMPANY_PAGE_SIZE;
+  return getDatabase().select().from(companies).where(companyConditions(scope, filters))
+    .orderBy(asc(companies.name), asc(companies.id)).limit(COMPANY_PAGE_SIZE).offset(offset);
+}
+
+export async function countCompanyMatches(scope: WorkspaceScope, filters: CompanyFilters = {}): Promise<number> {
+  const [result] = await getDatabase().select({ count: sql<number>`count(*)::int` }).from(companies).where(companyConditions(scope, filters));
+  return result?.count ?? 0;
 }
 
 export async function getCompany(scope: WorkspaceScope, companyId: string) {

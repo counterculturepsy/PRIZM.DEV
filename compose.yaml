@@ -1,0 +1,40 @@
+name: prizm-dev
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${PRIZM_DB_USER:-prizm}
+      POSTGRES_PASSWORD: ${PRIZM_DB_PASSWORD:-prizm_local_only}
+      POSTGRES_DB: ${PRIZM_DB_NAME:-prizm}
+    ports:
+      - "127.0.0.1:${PRIZM_DB_PORT:-5435}:5432"
+    volumes:
+      - prizm-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PRIZM_DB_USER:-prizm} -d ${PRIZM_DB_NAME:-prizm}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  web:
+    build:
+      context: .
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NEXTAUTH_URL: ${PRIZM_SITE_URL:-http://localhost:3003}
+      DATABASE_URL: postgresql://${PRIZM_DB_USER:-prizm}:${PRIZM_DB_PASSWORD:-prizm_local_only}@postgres:5432/${PRIZM_DB_NAME:-prizm}
+      AUTH_SECRET: ${PRIZM_AUTH_SECRET:-local-docker-secret-change-before-use}
+    command: ["sh", "-c", "pnpm db:migrate && pnpm start -- -H 0.0.0.0"]
+    ports:
+      - "127.0.0.1:${PRIZM_WEB_PORT:-3003}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  prizm-postgres-data:

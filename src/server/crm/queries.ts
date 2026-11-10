@@ -9,6 +9,7 @@ import {
   crmTasks,
   deals,
   leads,
+  opportunities,
   users,
   workspaceMembers,
 } from "@/server/db/schema";
@@ -54,6 +55,7 @@ export async function getCrmLead(scope: WorkspaceScope, leadId: string) {
     industry: companies.industry,
     city: companies.city,
     sourceOpportunityId: leads.sourceOpportunityId,
+    sourceAuditId: opportunities.auditId,
     stage: deals.stage,
     valueMinor: deals.valueMinor,
     currency: deals.currency,
@@ -63,6 +65,11 @@ export async function getCrmLead(scope: WorkspaceScope, leadId: string) {
   }).from(leads)
     .innerJoin(companies, and(eq(companies.workspaceId, leads.workspaceId), eq(companies.id, leads.companyId)))
     .innerJoin(deals, and(eq(deals.workspaceId, leads.workspaceId), eq(deals.leadId, leads.id)))
+    .leftJoin(opportunities, and(
+      eq(opportunities.workspaceId, leads.workspaceId),
+      eq(opportunities.companyId, leads.companyId),
+      eq(opportunities.id, leads.sourceOpportunityId),
+    ))
     .where(and(tenantWhere(leads.workspaceId, scope), eq(leads.id, leadId))).limit(1);
   if (!header) return null;
 
