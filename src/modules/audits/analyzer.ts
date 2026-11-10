@@ -16,6 +16,10 @@ export function analyzeWebsiteSnapshot(snapshot: AuditSnapshot): AuditAnalysis {
   const missingAlt = $("img").filter((_, element) => $(element).attr("alt") === undefined).length;
   const labelledIds = new Set($("label[for]").map((_, element) => $(element).attr("for")).get().filter((value): value is string => Boolean(value)));
   const unlabelledControls = $("input:not([type=hidden]), select, textarea").filter((_, element) => {
+    const control = $(element);
+    const type = (control.attr("type") ?? "text").toLowerCase();
+    // Buttons and image inputs are named by their own value or alt text, not by a label element.
+    if (control.is("input") && (type === "submit" || type === "reset" || (type === "button" && control.attr("value")?.trim()) || (type === "image" && control.attr("alt")?.trim()))) return false;
     const id = $(element).attr("id");
     return !$(element).attr("aria-label") && !$(element).attr("aria-labelledby") && !$(element).closest("label").length && !(id && labelledIds.has(id));
   }).length;

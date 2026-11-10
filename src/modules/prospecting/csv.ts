@@ -41,7 +41,7 @@ const companyRowSchema = z.object({
   industry: optionalText(120),
   city: optionalText(120),
   province: optionalText(120),
-  country_code: z.string().trim().toUpperCase().regex(/^[A-Z]{2}$/).optional(),
+  country_code: z.preprocess((value) => (value === "" ? undefined : value), z.string().trim().toUpperCase().regex(/^[A-Z]{2}$/).optional()),
   phone: optionalText(50),
   email: z.string().trim().max(254).optional().transform((value, context) => {
     if (!value) return undefined;
@@ -129,6 +129,10 @@ export function parseCompanyCsv(input: string): CompanyCsvRow[] {
     if (!parsed.success) throw new CsvImportError(`Row ${index + 2}: ${parsed.error.issues[0]?.message ?? "invalid data"}.`);
     return parsed.data;
   });
+}
+
+export function safeParseCompanyRow(candidate: Record<string, string>) {
+  return companyRowSchema.safeParse(candidate);
 }
 
 export const companyCsvHeaders = allowedHeaders;

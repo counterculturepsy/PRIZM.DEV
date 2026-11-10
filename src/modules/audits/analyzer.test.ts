@@ -20,6 +20,16 @@ describe("static website analyzer", () => {
     expect(result.findings).toHaveLength(0);
   });
 
+  it("does not report buttons, submit inputs or named image inputs as unlabelled controls", () => {
+    const flagged = (body: string) => analyzeWebsiteSnapshot(snapshot(`<html lang="en"><body>${body}</body></html>`)).findings.map((item) => item.code).includes("a11y.form_label_missing");
+    expect(flagged('<form><input type="submit" value="Send"><input type="reset"><input type="button" value="Go"><input type="image" alt="Search" src="s.png"></form>')).toBe(false);
+    expect(flagged('<input type="hidden" name="token"><input aria-label="Search"><label>Name <input></label>')).toBe(false);
+    expect(flagged('<input type="button">')).toBe(true);
+    expect(flagged('<input type="image" src="s.png">')).toBe(true);
+    expect(flagged('<input type="text">')).toBe(true);
+    expect(flagged("<select></select>")).toBe(true);
+  });
+
   it("records concrete evidence and bounded score impacts", () => {
     const result = analyzeWebsiteSnapshot(snapshot("<html><body><img src='missing.jpg'><input></body></html>", { headers: {}, durationMs: 4_000 }));
     expect(result.score).toBeGreaterThanOrEqual(0);

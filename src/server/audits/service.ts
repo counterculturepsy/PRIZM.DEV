@@ -1,6 +1,7 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { WorkspaceScope } from "@/modules/workspaces/scope";
 import { analyzeWebsiteSnapshot } from "@/modules/audits/analyzer";
+import { evaluateAuditQueueLimit } from "@/modules/audits/queue-limits";
 import { normalizeAuditUrl } from "@/modules/audits/url-policy";
 import { AuditPolicyError, type WebsiteAuditProvider } from "@/modules/audits/types";
 import { getDatabase } from "@/server/db";
@@ -22,6 +23,14 @@ export async function queueWebsiteAudit(scope: WorkspaceScope, input: { companyI
   const normalizedOrigin = url.origin.toLowerCase();
 
   return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`audit-queue:${scope.workspaceId}`}))`);
+    const [usage] = await tx.select({
+      active: sql<number>`count(*) filter (where ${websiteAudits.status} in ('queued', 'running'))::int`,
+      requestedLast24h: sql<number>`count(*) filter (where ${websiteAudits.requestedAt} > now() - interval '24 hours')::int`,
+    }).from(websiteAudits).where(eq(websiteAudits.workspaceId, scope.workspaceId));
+    const blocked = evaluateAuditQueueLimit({ active: usage?.active ?? 0, requestedLast24h: usage?.requestedLast24h ?? 0 });
+    if (blocked) throw new AuditRequestError(blocked);
+
     const [website] = await tx.insert(websites).values({
       workspaceId: scope.workspaceId, companyId: company.id, url: url.toString(), normalizedOrigin,
     }).onConflictDoUpdate({
@@ -126,16 +135,19 @@ export async function processNextAuditJob(provider: WebsiteAuditProvider, worker
         targetId: job.auditId, metadata: { status: finalStatus, score: analysis.score, provider: provider.id },
       });
     });
-    try {
-      await materializeOpportunityIntelligence({ workspaceId: job.workspaceId, auditId: job.auditId });
-    } catch {
-      await db.insert(auditLogs).values({
-        workspaceId: job.workspaceId,
-        action: "opportunity_intelligence.failed",
-        targetType: "website_audit",
-        targetId: job.auditId,
-        metadata: { errorCode: "materialization_failed" },
-      }).catch(() => undefined); // Never downgrade a completed audit because optional intelligence logging failed.
+    // A response with an error status describes an error page, not the company's site, so it is never scored.
+    if (finalStatus === "completed") {
+      try {
+        await materializeOpportunityIntelligence({ workspaceId: job.workspaceId, auditId: job.auditId });
+      } catch {
+        await db.insert(auditLogs).values({
+          workspaceId: job.workspaceId,
+          action: "opportunity_intelligence.failed",
+          targetType: "website_audit",
+          targetId: job.auditId,
+          metadata: { errorCode: "materialization_failed" },
+        }).catch(() => undefined); // Never downgrade a completed audit because optional intelligence logging failed.
+      }
     }
     return { auditId: job.auditId, status: finalStatus };
   } catch (error) {

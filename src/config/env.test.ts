@@ -16,6 +16,9 @@ describe("serverEnvSchema", () => {
   it("rejects an incomplete OAuth provider pair", () => {
     const result = serverEnvSchema.safeParse({ ...valid, AUTH_GITHUB_ID: "client-id" });
     expect(result.success).toBe(false);
+    expect(serverEnvSchema.safeParse({ ...valid, AUTH_GOOGLE_ID: "google-client-id" }).success).toBe(false);
+    expect(serverEnvSchema.safeParse({ ...valid, AUTH_GOOGLE_SECRET: "google-client-secret" }).success).toBe(false);
+    expect(serverEnvSchema.safeParse({ ...valid, AUTH_GOOGLE_ID: "google-client-id", AUTH_GOOGLE_SECRET: "google-client-secret" }).success).toBe(true);
   });
 
   it("rejects non-PostgreSQL database URLs", () => {
@@ -23,9 +26,64 @@ describe("serverEnvSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  it("allows the authentication bypass only in local development", () => {
+    const development = { ...valid, NODE_ENV: "development", DEV_AUTH_BYPASS: "true" };
+    expect(serverEnvSchema.parse(development).DEV_AUTH_BYPASS).toBe(true);
+    expect(serverEnvSchema.safeParse({ ...development, NODE_ENV: "test" }).success).toBe(false);
+    expect(serverEnvSchema.safeParse({ ...development, NODE_ENV: "production" }).success).toBe(false);
+  });
+
+  it("keeps password authentication disabled unless explicitly enabled", () => {
+    expect(serverEnvSchema.parse(valid).PASSWORD_AUTH_ENABLED).toBe(false);
+    expect(serverEnvSchema.parse({ ...valid, PASSWORD_AUTH_ENABLED: "true" }).PASSWORD_AUTH_ENABLED).toBe(true);
+    expect(serverEnvSchema.safeParse({ ...valid, PASSWORD_AUTH_ENABLED: "yes" }).success).toBe(false);
+  });
+
   it("rejects ambiguous website audit switches", () => {
     expect(serverEnvSchema.safeParse({ ...valid, WEBSITE_AUDIT_ENABLED: "yes" }).success).toBe(false);
     expect(serverEnvSchema.parse({ ...valid, WEBSITE_AUDIT_ENABLED: "false" }).WEBSITE_AUDIT_ENABLED).toBe(false);
+  });
+
+  it("keeps external discovery off unless a provider is configured and its terms are acknowledged", () => {
+    expect(serverEnvSchema.parse(valid).DISCOVERY_PROVIDER).toBe("none");
+    expect(serverEnvSchema.parse({ ...valid, DISCOVERY_PROVIDER: "" }).DISCOVERY_PROVIDER).toBe("none");
+    expect(serverEnvSchema.safeParse({ ...valid, DISCOVERY_PROVIDER: "overpass" }).success).toBe(false);
+    expect(serverEnvSchema.safeParse({ ...valid, DISCOVERY_PROVIDER: "unknown" }).success).toBe(false);
+  });
+
+  it("requires terms acknowledgement and a contactable user agent to enable a provider", () => {
+    const enabled = {
+      ...valid,
+      DISCOVERY_PROVIDER: "overpass",
+      DISCOVERY_TERMS_VERIFIED_FOR: "overpass",
+      DISCOVERY_USER_AGENT: "PRIZMDEV/1.0 (https://example.com/contact)",
+    };
+    expect(serverEnvSchema.safeParse(enabled).success).toBe(true);
+    expect(serverEnvSchema.safeParse({ ...enabled, DISCOVERY_TERMS_VERIFIED_FOR: "someone-else" }).success).toBe(false);
+    expect(serverEnvSchema.safeParse({ ...enabled, DISCOVERY_USER_AGENT: "PRIZMDEV/1.0 anonymous app" }).success).toBe(false);
+    expect(serverEnvSchema.safeParse({ ...enabled, OVERPASS_API_URL: "http://insecure.example/api" }).success).toBe(false);
+    expect(serverEnvSchema.safeParse({ ...enabled, OVERPASS_API_URL: "https://overpass.example/api/interpreter" }).success).toBe(true);
+  });
+
+  it("enables the local extract without a user agent, but still requires the terms acknowledgement", () => {
+    const base = { ...valid, DISCOVERY_PROVIDER: "osm_extract" };
+    expect(serverEnvSchema.safeParse(base).success).toBe(false);
+    expect(serverEnvSchema.safeParse({ ...base, DISCOVERY_TERMS_VERIFIED_FOR: "overpass" }).success).toBe(false);
+    expect(serverEnvSchema.safeParse({ ...base, DISCOVERY_TERMS_VERIFIED_FOR: "osm_extract" }).success).toBe(true);
+    const withRadius = (radius: string) => serverEnvSchema.safeParse({ ...base, DISCOVERY_TERMS_VERIFIED_FOR: "osm_extract", OSM_EXTRACT_RADIUS_KM: radius });
+    expect(withRadius("15").success && withRadius("15").data?.OSM_EXTRACT_RADIUS_KM).toBe(15);
+    expect(withRadius("500").success).toBe(false);
+    expect(withRadius("0").success).toBe(false);
+  });
+
+  it("requires a real crawler contact before website audits can be enabled", () => {
+    const enabled = { ...valid, WEBSITE_AUDIT_ENABLED: "true" };
+    expect(serverEnvSchema.safeParse(valid).success).toBe(true);
+    expect(serverEnvSchema.safeParse(enabled).success).toBe(false);
+    expect(serverEnvSchema.safeParse({ ...enabled, AUDIT_USER_AGENT: "PRIZMDEV/1.0 anonymous crawler" }).success).toBe(false);
+    expect(serverEnvSchema.safeParse({ ...enabled, AUDIT_USER_AGENT: "PRIZMDEV/1.0 (+https://example.com/audit-policy)" }).success).toBe(false);
+    expect(serverEnvSchema.safeParse({ ...enabled, AUDIT_USER_AGENT: "PRIZMDEV/1.0 (+https://my-domain.test/crawler)" }).success).toBe(true);
+    expect(serverEnvSchema.safeParse({ ...enabled, AUDIT_USER_AGENT: "PRIZMDEV/1.0 (crawler@my-domain.test)" }).success).toBe(true);
   });
 
   it("keeps campaign delivery fail-closed in this release", () => {

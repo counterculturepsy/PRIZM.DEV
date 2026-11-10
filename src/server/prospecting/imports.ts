@@ -1,10 +1,114 @@
 import { and, eq } from "drizzle-orm";
 import type { WorkspaceScope } from "@/modules/workspaces/scope";
-import { companyDedupeKey, companySourceKey, parseCompanyCsv } from "@/modules/prospecting/csv";
+import { companyDedupeKey, companySourceKey, normalizeDomain, parseCompanyCsv, type CompanyCsvRow } from "@/modules/prospecting/csv";
 import { getDatabase } from "@/server/db";
 import { auditLogs, companies, companySources, discoveryRuns } from "@/server/db/schema";
 
 export type ImportResult = Readonly<{ rows: number; created: number; updated: number }>;
+
+type Database = ReturnType<typeof getDatabase>;
+export type DatabaseTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+
+export type CompanySourceInput = Readonly<{
+  provider: string;
+  kind: "observed" | "user_supplied" | "inferred";
+  confidence: "high" | "medium" | "low";
+  sourceKey: string;
+  /**
+   * `overwrite` replaces stored fields with the supplied values (user-supplied CSV).
+   * `fill_missing` only completes fields that are still empty, so external data never replaces what a user entered.
+   */
+  mode: "overwrite" | "fill_missing";
+  /** When the source itself observed the data (for example an OSM extract's data date). Defaults to the import time. */
+  observedAt?: Date;
+  /** Extra provenance stored with the source snapshot, for example which fields came from the search area. */
+  snapshotExtras?: Readonly<Record<string, string>>;
+}>;
+
+function definedCompanyValues(row: CompanyCsvRow): Partial<typeof companies.$inferInsert> {
+  const candidate = {
+    description: row.description,
+    industry: row.industry,
+    employeeEstimate: row.employee_estimate,
+    address: row.address,
+    city: row.city,
+    province: row.province,
+    postalCode: row.postal_code,
+    countryCode: row.country_code,
+    website: row.website,
+    domain: normalizeDomain(row.website),
+    phone: row.phone,
+    email: row.email,
+    whatsapp: row.whatsapp,
+    facebookUrl: row.facebook_url,
+    instagramUrl: row.instagram_url,
+    linkedinUrl: row.linkedin_url,
+    googleMapsUrl: row.google_maps_url,
+    ratingHundredths: row.rating === undefined ? undefined : Math.round(row.rating * 100),
+    reviewCount: row.review_count,
+  };
+  return Object.fromEntries(Object.entries(candidate).filter(([, value]) => value !== undefined));
+}
+
+/** Creates or updates one workspace company, matched by domain or normalized identity, and records its source. */
+export async function upsertCompanyRow(
+  tx: DatabaseTransaction,
+  scope: WorkspaceScope,
+  row: CompanyCsvRow,
+  source: CompanySourceInput,
+): Promise<"created" | "updated"> {
+  const dedupeKey = companyDedupeKey(row);
+  const [existing] = await tx.select().from(companies).where(and(
+    eq(companies.workspaceId, scope.workspaceId),
+    eq(companies.dedupeKey, dedupeKey),
+  )).limit(1);
+  const values = definedCompanyValues(row);
+
+  let companyId: string;
+  let outcome: "created" | "updated";
+  if (existing) {
+    const updates: Partial<typeof companies.$inferInsert> = source.mode === "overwrite"
+      ? { name: row.name, ...values }
+      : Object.fromEntries(Object.entries(values).filter(([key]) => existing[key as keyof typeof existing] === null));
+    if (source.mode === "overwrite" || Object.keys(updates).length > 0) {
+      await tx.update(companies).set({ ...updates, updatedAt: new Date() }).where(and(
+        eq(companies.workspaceId, scope.workspaceId),
+        eq(companies.id, existing.id),
+      ));
+    }
+    companyId = existing.id;
+    outcome = "updated";
+  } else {
+    const [company] = await tx.insert(companies).values({
+      workspaceId: scope.workspaceId,
+      dedupeKey,
+      name: row.name,
+      ...values,
+      countryCode: row.country_code ?? "ZA",
+    }).returning({ id: companies.id });
+    if (!company) throw new Error("Company was not created");
+    companyId = company.id;
+    outcome = "created";
+  }
+
+  const snapshot = {
+    ...Object.fromEntries(Object.entries(row).filter((entry): entry is [string, string | number] => entry[1] !== undefined)),
+    ...source.snapshotExtras,
+  };
+  await tx.insert(companySources).values({
+    workspaceId: scope.workspaceId,
+    companyId,
+    provider: source.provider,
+    sourceKey: source.sourceKey,
+    externalId: row.external_id ?? null,
+    sourceUrl: row.source_url ?? null,
+    confidence: source.confidence,
+    kind: source.kind,
+    observedAt: source.observedAt ?? new Date(),
+    snapshot,
+  }).onConflictDoNothing({ target: [companySources.workspaceId, companySources.sourceKey] });
+  return outcome;
+}
 
 export async function importCompanyCsv(scope: WorkspaceScope, input: string): Promise<ImportResult> {
   const rows = parseCompanyCsv(input);
@@ -21,85 +125,15 @@ export async function importCompanyCsv(scope: WorkspaceScope, input: string): Pr
     let created = 0;
     let updated = 0;
     for (const row of rows) {
-      const dedupeKey = companyDedupeKey(row);
-      const [existing] = await tx.select({ id: companies.id }).from(companies).where(and(
-        eq(companies.workspaceId, scope.workspaceId),
-        eq(companies.dedupeKey, dedupeKey),
-      )).limit(1);
-
-      const values = {
-        name: row.name,
-        description: row.description ?? null,
-        industry: row.industry ?? null,
-        employeeEstimate: row.employee_estimate ?? null,
-        address: row.address ?? null,
-        city: row.city ?? null,
-        province: row.province ?? null,
-        postalCode: row.postal_code ?? null,
-        countryCode: row.country_code ?? "ZA",
-        website: row.website ?? null,
-        domain: row.website ? new URL(row.website).hostname.toLowerCase().replace(/^www\./, "") : null,
-        phone: row.phone ?? null,
-        email: row.email ?? null,
-        whatsapp: row.whatsapp ?? null,
-        facebookUrl: row.facebook_url ?? null,
-        instagramUrl: row.instagram_url ?? null,
-        linkedinUrl: row.linkedin_url ?? null,
-        googleMapsUrl: row.google_maps_url ?? null,
-        ratingHundredths: row.rating === undefined ? null : Math.round(row.rating * 100),
-        reviewCount: row.review_count ?? null,
-      };
-
-      let companyId: string;
-      if (existing) {
-        const updates: Partial<typeof companies.$inferInsert> = {
-          name: row.name,
-          updatedAt: new Date(),
-          ...(row.description !== undefined ? { description: row.description } : {}),
-          ...(row.industry !== undefined ? { industry: row.industry } : {}),
-          ...(row.employee_estimate !== undefined ? { employeeEstimate: row.employee_estimate } : {}),
-          ...(row.address !== undefined ? { address: row.address } : {}),
-          ...(row.city !== undefined ? { city: row.city } : {}),
-          ...(row.province !== undefined ? { province: row.province } : {}),
-          ...(row.postal_code !== undefined ? { postalCode: row.postal_code } : {}),
-          ...(row.country_code !== undefined ? { countryCode: row.country_code } : {}),
-          ...(row.website !== undefined ? { website: row.website, domain: new URL(row.website).hostname.toLowerCase().replace(/^www\./, "") } : {}),
-          ...(row.phone !== undefined ? { phone: row.phone } : {}),
-          ...(row.email !== undefined ? { email: row.email } : {}),
-          ...(row.whatsapp !== undefined ? { whatsapp: row.whatsapp } : {}),
-          ...(row.facebook_url !== undefined ? { facebookUrl: row.facebook_url } : {}),
-          ...(row.instagram_url !== undefined ? { instagramUrl: row.instagram_url } : {}),
-          ...(row.linkedin_url !== undefined ? { linkedinUrl: row.linkedin_url } : {}),
-          ...(row.google_maps_url !== undefined ? { googleMapsUrl: row.google_maps_url } : {}),
-          ...(row.rating !== undefined ? { ratingHundredths: Math.round(row.rating * 100) } : {}),
-          ...(row.review_count !== undefined ? { reviewCount: row.review_count } : {}),
-        };
-        await tx.update(companies).set(updates).where(and(
-          eq(companies.workspaceId, scope.workspaceId),
-          eq(companies.id, existing.id),
-        ));
-        companyId = existing.id;
-        updated += 1;
-      } else {
-        const [company] = await tx.insert(companies).values({ workspaceId: scope.workspaceId, dedupeKey, ...values }).returning({ id: companies.id });
-        if (!company) throw new Error("Company was not created");
-        companyId = company.id;
-        created += 1;
-      }
-
-      const snapshot = Object.fromEntries(Object.entries(row).filter((entry): entry is [string, string | number] => entry[1] !== undefined));
-      await tx.insert(companySources).values({
-        workspaceId: scope.workspaceId,
-        companyId,
+      const outcome = await upsertCompanyRow(tx, scope, row, {
         provider: "csv",
-        sourceKey: companySourceKey(row),
-        externalId: row.external_id ?? null,
-        sourceUrl: row.source_url ?? null,
-        confidence: "medium",
         kind: "user_supplied",
-        observedAt: new Date(),
-        snapshot,
-      }).onConflictDoNothing({ target: [companySources.workspaceId, companySources.sourceKey] });
+        confidence: "medium",
+        sourceKey: companySourceKey(row),
+        mode: "overwrite",
+      });
+      if (outcome === "created") created += 1;
+      else updated += 1;
     }
 
     await tx.update(discoveryRuns).set({ status: "completed", resultCount: rows.length, completedAt: new Date() }).where(and(

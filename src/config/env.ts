@@ -28,6 +28,8 @@ export const serverEnvSchema = z
     AUTH_GITHUB_SECRET: optionalSecret,
     AUTH_GOOGLE_ID: optionalString,
     AUTH_GOOGLE_SECRET: optionalSecret,
+    PASSWORD_AUTH_ENABLED: optionalBoolean.default(false),
+    DEV_AUTH_BYPASS: optionalBoolean.default(false),
     INTEGRATION_ENCRYPTION_KEY: optionalSecret,
     OPENAI_API_KEY: optionalSecret,
     AI_GENERATION_ENABLED: optionalBoolean.default(false),
@@ -38,13 +40,36 @@ export const serverEnvSchema = z
     CAMPAIGN_DELIVERY_ENABLED: optionalBoolean.default(false),
     AUDIT_USER_AGENT: z.preprocess((value) => value === "" ? undefined : value, z.string().min(10).max(300).optional()).default("PRIZMDEV/1.0"),
     AUDIT_MAX_RESPONSE_BYTES: z.preprocess((value) => value === "" || value === undefined ? undefined : Number(value), z.number().int().min(100_000).max(2_000_000).optional()).default(2_000_000),
+    DISCOVERY_PROVIDER: z.preprocess((value) => value === "" ? undefined : value, z.enum(["none", "overpass", "osm_extract"]).optional()).default("none"),
+    DISCOVERY_TERMS_VERIFIED_FOR: optionalString,
+    DISCOVERY_USER_AGENT: z.preprocess((value) => value === "" ? undefined : value, z.string().min(20).max(300).optional()),
+    OVERPASS_API_URL: z.preprocess((value) => value === "" ? undefined : value, z.url().refine((url) => url.startsWith("https://"), "OVERPASS_API_URL must use https").optional()),
+    OSM_EXTRACT_RADIUS_KM: z.preprocess((value) => value === "" || value === undefined ? undefined : Number(value), z.number().min(1).max(50).optional()),
   })
   .superRefine((value, context) => {
+    if (value.DEV_AUTH_BYPASS && value.NODE_ENV !== "development") {
+      context.addIssue({
+        code: "custom",
+        path: ["DEV_AUTH_BYPASS"],
+        message: "DEV_AUTH_BYPASS is only permitted when NODE_ENV=development.",
+      });
+    }
     if (value.AI_GENERATION_ENABLED && (!value.OPENAI_API_KEY || !value.OPENAI_MODEL)) {
       context.addIssue({ code: "custom", path: ["AI_GENERATION_ENABLED"], message: "Enabled AI requires an OpenAI key and explicit model." });
     }
     if (value.CAMPAIGN_DELIVERY_ENABLED) {
       context.addIssue({ code: "custom", path: ["CAMPAIGN_DELIVERY_ENABLED"], message: "Campaign delivery has no approved provider adapter in this release." });
+    }
+    if (value.WEBSITE_AUDIT_ENABLED && (!/(https?:\/\/|@)/.test(value.AUDIT_USER_AGENT) || /\bexample\.(com|org|net)\b/i.test(value.AUDIT_USER_AGENT))) {
+      context.addIssue({ code: "custom", path: ["AUDIT_USER_AGENT"], message: "When website audits are enabled, AUDIT_USER_AGENT must identify the crawler with a real contact URL or email address (not an example.com placeholder)." });
+    }
+    if (value.DISCOVERY_PROVIDER !== "none") {
+      if (value.DISCOVERY_TERMS_VERIFIED_FOR !== value.DISCOVERY_PROVIDER) {
+        context.addIssue({ code: "custom", path: ["DISCOVERY_TERMS_VERIFIED_FOR"], message: "Set DISCOVERY_TERMS_VERIFIED_FOR to the provider id only after its usage terms have been read and accepted." });
+      }
+      if (value.DISCOVERY_PROVIDER === "overpass" && (!value.DISCOVERY_USER_AGENT || !/(https?:\/\/|@)/.test(value.DISCOVERY_USER_AGENT))) {
+        context.addIssue({ code: "custom", path: ["DISCOVERY_USER_AGENT"], message: "DISCOVERY_USER_AGENT must identify this application and include a contact URL or email address." });
+      }
     }
     const pairs = [
       ["AUTH_GITHUB_ID", "AUTH_GITHUB_SECRET"],

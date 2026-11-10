@@ -20,6 +20,45 @@ export const serviceInputSchema = z.object({
   deliveryTimeDays: z.coerce.number().int().min(1).max(730).optional(),
 });
 
+export const SERVICE_DESCRIPTION_MAX = 500;
+export const SERVICE_FEATURES_MAX = 12;
+export const SERVICE_FEATURE_MAX_LENGTH = 80;
+
+/** Trims entries, drops blanks and removes exact duplicates (the first occurrence wins). */
+export function normalizeFeatures(entries: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const entry of entries) {
+    const value = entry.trim();
+    if (value === "" || seen.has(value)) continue;
+    seen.add(value);
+    result.push(value);
+  }
+  return result;
+}
+
+/** One feature per line, as entered in the service details form. */
+export function parseFeatureLines(text: string): string[] {
+  return normalizeFeatures(text.split(/\r?\n/));
+}
+
+/**
+ * The only service fields the details editor may change. Name, slug, active status, prices and delivery
+ * time are deliberately absent, so they cannot be edited through this schema.
+ */
+export const serviceDetailsSchema = z.object({
+  serviceId: z.uuid(),
+  description: z.string().trim().max(SERVICE_DESCRIPTION_MAX, `Description must be ${SERVICE_DESCRIPTION_MAX} characters or fewer.`),
+  features: z
+    .array(z.string().max(1_000), "Features must be a list of text entries.")
+    .max(100, "Too many feature lines.")
+    .transform(normalizeFeatures)
+    .pipe(
+      z.array(z.string().max(SERVICE_FEATURE_MAX_LENGTH, `Each feature must be ${SERVICE_FEATURE_MAX_LENGTH} characters or fewer.`))
+        .max(SERVICE_FEATURES_MAX, `Use at most ${SERVICE_FEATURES_MAX} features.`),
+    ),
+});
+
 const listFromText = z.string().transform((value) =>
   [...new Set(value.split(/[\n,]/).map((item) => item.trim()).filter(Boolean))].slice(0, 50),
 );

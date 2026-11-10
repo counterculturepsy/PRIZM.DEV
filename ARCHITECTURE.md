@@ -61,7 +61,7 @@ Client-supplied workspace IDs are selectors, never proof of access. Future Postg
 | `/app/audits/[auditId]` | Member | M3 | Evidence-backed audit report |
 | `/app/ai/strategy` | Member | M6 | Sales strategy drafts |
 | `/app/ai/outreach` | Member | M6 | Reviewed outreach drafts |
-| `/app/ai/proposals` | Member | M7 | Proposal generation |
+| `/app/proposals` | Member | M7 | Versioned proposal drafting and human approval |
 | `/app/crm/pipeline` | Member | M5 | Deal kanban |
 | `/app/crm/companies` | Member | M5 | CRM companies |
 | `/app/crm/contacts` | Member | M5 | Attributed contacts |

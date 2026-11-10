@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { WorkspaceScope } from "@/modules/workspaces/scope";
 import { dealLifecycle, normalizeEmail, normalizePhone, type DealStage } from "@/modules/crm/validation";
 import { getDatabase } from "@/server/db";
@@ -33,22 +33,25 @@ async function requireLead(scope: WorkspaceScope, leadId: string) {
 
 export async function createCrmLead(scope: WorkspaceScope, input: { companyId: string; sourceOpportunityId?: string | undefined; title: string }) {
   const db = getDatabase();
-  const [company] = await db.select({ id: companies.id }).from(companies)
-    .where(and(eq(companies.workspaceId, scope.workspaceId), eq(companies.id, input.companyId))).limit(1);
-  if (!company) throw new CrmMutationError("Choose a company in the active workspace.");
-  if (input.sourceOpportunityId) {
-    const [source] = await db.select({ id: opportunities.id }).from(opportunities).where(and(
-      eq(opportunities.workspaceId, scope.workspaceId),
-      eq(opportunities.companyId, input.companyId),
-      eq(opportunities.id, input.sourceOpportunityId),
-    )).limit(1);
-    if (!source) throw new CrmMutationError("Choose an opportunity for this company.");
-  }
-  const [workspace] = await db.select({ currency: workspaces.currency }).from(workspaces)
-    .where(eq(workspaces.id, scope.workspaceId)).limit(1);
-  if (!workspace) throw new CrmMutationError("The active workspace is unavailable.");
-
   return db.transaction(async (tx) => {
+    // Serialize lead conversion with opportunity materialization. Both operations lock the tenant/company
+    // row first, so a lead always references either the pre-refresh or the fully committed refreshed snapshot.
+    await tx.execute(sql`select id from companies where workspace_id = ${scope.workspaceId} and id = ${input.companyId} for update`);
+    const [company] = await tx.select({ id: companies.id }).from(companies)
+      .where(and(eq(companies.workspaceId, scope.workspaceId), eq(companies.id, input.companyId))).limit(1);
+    if (!company) throw new CrmMutationError("Choose a company in the active workspace.");
+    if (input.sourceOpportunityId) {
+      const [source] = await tx.select({ id: opportunities.id }).from(opportunities).where(and(
+        eq(opportunities.workspaceId, scope.workspaceId),
+        eq(opportunities.companyId, input.companyId),
+        eq(opportunities.id, input.sourceOpportunityId),
+      )).limit(1);
+      if (!source) throw new CrmMutationError("Choose an opportunity for this company.");
+    }
+    const [workspace] = await tx.select({ currency: workspaces.currency }).from(workspaces)
+      .where(eq(workspaces.id, scope.workspaceId)).limit(1);
+    if (!workspace) throw new CrmMutationError("The active workspace is unavailable.");
+
     const [created] = await tx.insert(leads).values({
       workspaceId: scope.workspaceId,
       companyId: input.companyId,

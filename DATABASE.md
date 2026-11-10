@@ -4,7 +4,10 @@ PostgreSQL is authoritative. Drizzle migrations are append-only after applicatio
 
 ## Implemented physical schema
 
-- `users`: identity profile only; no tenant-owned business data
+- `users`: identity profile, optional password hash, verification timestamp, authentication version and password-change timestamp; no tenant-owned business data
+- `auth_rate_limit_windows`: short-lived, durable authentication attempt windows keyed by HMAC-pseudonymized account/IP identifiers; raw email addresses and IP addresses are not stored
+- `auth_action_tokens`: expiring, single-use email-verification and password-reset token hashes; raw tokens are never persisted
+- `auth_security_events`: authentication outcome metadata with optional user link and HMAC-pseudonymized account/IP identifiers; passwords and raw tokens are excluded
 - `workspaces`: tenant root and lifecycle status
 - `workspace_members`: many-to-many membership with Owner/Admin/Sales/Developer/Viewer role
 - `accounts`, `sessions`, `verification_tokens`: Auth.js-compatible identity records
@@ -25,6 +28,8 @@ PostgreSQL is authoritative. Drizzle migrations are append-only after applicatio
 - `lead_scores`: versioned, explainable audit/ICP score history with one current score per company
 - `opportunities`: deterministic recommendations linked to a company, audit, and optional configured service price
 - `opportunity_evidence`: same-tenant, same-audit relational links to source findings
+- `opportunity_service_mappings`: workspace-owned, editable assignment of services to opportunity types (migration 0011); many services per type, at most one preferred (partial unique index); composite foreign key to `services(workspace_id, id)` blocks cross-workspace links
+- `opportunity_service_recommendations`: immutable snapshot (service name, preferred status, rank, price status, prices, currency) taken when an opportunity is generated; `service_id` is set to null (not the row removed) if the service is later deleted. Created only by generation; historical opportunities have none and are never backfilled automatically
 - `leads`, `deals`: one tenant/company lead and its server-authoritative pipeline state
 - `contacts`, `suppression_entries`: attributed business contacts, normalized deduplication, and future-send safety state
 - `crm_notes`, `crm_tasks`, `crm_activities`: bounded notes, follow-ups, and append-only CRM history
@@ -35,6 +40,10 @@ PostgreSQL is authoritative. Drizzle migrations are append-only after applicatio
 - `campaign_templates`, `campaigns`, `campaign_steps`, `campaign_recipients`: immutable content, reviewed preparation, ordered sequence and attributed audience snapshots
 - `campaign_messages`, `campaign_delivery_usage`: immutable staged messages, leased retry state, provider idempotency and serialized UTC daily reservations
 - `campaign_unsubscribe_tokens`, `campaign_provider_events`: one-way token hashes and replay-safe normalized delivery outcomes without raw provider payloads
+
+## Global reference data: `osm_source`
+
+Migration `0010` adds a separate `osm_source` schema holding a locally loaded OpenStreetMap extract: `datasets` (region, source URL, data timestamp, licence, attribution, status), `places` (named businesses matching the configured industries, with coordinates and an allowlisted tag subset) and `localities` (named towns and suburbs used as search centres). This is deliberately the one exception to workspace ownership: it is public, read-only reference data with no tenant column, written only by the offline loader and read only by the discovery provider. Tenant data never mixes with it; discovery copies selected rows into workspace-owned `companies` with `company_sources` attribution. A dataset becomes `ready` only after a complete load, the previous one becomes `superseded`, and a failed load deletes its rows. See `plans/discovery-local-osm-extract.md`.
 
 ## Derived analytics
 
@@ -70,3 +79,5 @@ Facts from external sources store provider, source URL or stable source referenc
 ## Migration policy
 
 Generate migrations with `pnpm db:generate`, review SQL, test against a disposable database, and apply with `pnpm db:migrate`. Never edit an applied migration. Required columns added to populated tables use a staged nullable/backfill/not-null sequence.
+
+Migration `0013` adds the durable rate-limit table. Migration `0014` adds authentication action tokens and security events, adds defaulted `auth_version` plus nullable `password_changed_at` to users, and expands the rate-limit kind constraint. Both were applied and exercised only against the explicitly isolated local `prizm`/`prizm_e2e` PostgreSQL databases on 2026-11-09; no production database was modified.

@@ -2,13 +2,17 @@ import { sql } from "drizzle-orm";
 import type { SalesDraft, SalesEvidence } from "@/modules/ai/sales";
 import type { ProposalSnapshot } from "@/modules/proposals/validation";
 import {
+  bigint,
+  bigserial,
   boolean,
   check,
+  doublePrecision,
   foreignKey,
   index,
   integer,
   jsonb,
   pgEnum,
+  pgSchema,
   pgTable,
   primaryKey,
   text,
@@ -67,11 +71,17 @@ export const users = pgTable(
     email: text("email").notNull(),
     emailVerified: timestamp("email_verified", { withTimezone: true }),
     image: text("image"),
+    passwordHash: text("password_hash"),
+    authVersion: integer("auth_version").default(0).notNull(),
+    passwordChangedAt: timestamp("password_changed_at", { withTimezone: true }),
     jobTitle: text("job_title"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [uniqueIndex("users_email_unique").on(table.email)],
+  (table) => [
+    uniqueIndex("users_email_unique").on(table.email),
+    check("users_auth_version_check", sql`${table.authVersion} >= 0`),
+  ],
 );
 
 export const accounts = pgTable(
@@ -256,6 +266,64 @@ export const verificationTokens = pgTable(
     expires: timestamp("expires", { withTimezone: true }).notNull(),
   },
   (table) => [primaryKey({ columns: [table.identifier, table.token] })],
+);
+
+export const authRateLimitWindows = pgTable(
+  "auth_rate_limit_windows",
+  {
+    kind: text("kind").notNull(),
+    identifierHash: text("identifier_hash").notNull(),
+    windowStartedAt: timestamp("window_started_at", { withTimezone: true }).notNull(),
+    attempts: integer("attempts").default(1).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.kind, table.identifierHash, table.windowStartedAt] }),
+    index("auth_rate_limit_windows_updated_idx").on(table.updatedAt),
+    check("auth_rate_limit_windows_kind_check", sql`${table.kind} in ('login', 'login_ip', 'registration', 'registration_ip', 'verification', 'verification_ip', 'verification_complete', 'password_reset', 'password_reset_ip', 'password_reset_complete')`),
+    check("auth_rate_limit_windows_hash_check", sql`char_length(${table.identifierHash}) = 64`),
+    check("auth_rate_limit_windows_attempts_check", sql`${table.attempts} >= 1`),
+  ],
+);
+
+export const authActionTokens = pgTable(
+  "auth_action_tokens",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    purpose: text("purpose").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("auth_action_tokens_hash_unique").on(table.tokenHash),
+    index("auth_action_tokens_user_purpose_idx").on(table.userId, table.purpose, table.createdAt),
+    check("auth_action_tokens_purpose_check", sql`${table.purpose} in ('email_verification', 'password_reset')`),
+    check("auth_action_tokens_hash_check", sql`char_length(${table.tokenHash}) = 64`),
+    check("auth_action_tokens_expiry_check", sql`${table.expiresAt} > ${table.createdAt}`),
+  ],
+);
+
+export const authSecurityEvents = pgTable(
+  "auth_security_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+    eventType: text("event_type").notNull(),
+    outcome: text("outcome").notNull(),
+    identifierHash: text("identifier_hash"),
+    ipHash: text("ip_hash"),
+    metadata: jsonb("metadata").$type<Record<string, string | number | boolean | null>>().default({}).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("auth_security_events_user_created_idx").on(table.userId, table.createdAt),
+    index("auth_security_events_type_created_idx").on(table.eventType, table.createdAt),
+    check("auth_security_events_identifier_hash_check", sql`${table.identifierHash} is null or char_length(${table.identifierHash}) = 64`),
+    check("auth_security_events_ip_hash_check", sql`${table.ipHash} is null or char_length(${table.ipHash}) = 64`),
+  ],
 );
 
 export const workspaces = pgTable(
@@ -536,6 +604,76 @@ export const opportunityEvidence = pgTable(
       foreignColumns: [auditFindings.workspaceId, auditFindings.auditId, auditFindings.id],
       name: "opportunity_evidence_workspace_audit_finding_fk",
     }).onDelete("cascade"),
+  ],
+);
+
+/** Workspace-owned, editable assignment of services to opportunity types (migration 0011). */
+export const opportunityServiceMappings = pgTable(
+  "opportunity_service_mappings",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    opportunityType: opportunityType("opportunity_type").notNull(),
+    serviceId: uuid("service_id").notNull(),
+    isPreferred: boolean("is_preferred").default(false).notNull(),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    unique("opportunity_service_mappings_workspace_type_service_unique").on(table.workspaceId, table.opportunityType, table.serviceId),
+    uniqueIndex("opportunity_service_mappings_one_preferred_unique").on(table.workspaceId, table.opportunityType).where(sql`${table.isPreferred}`),
+    index("opportunity_service_mappings_workspace_type_idx").on(table.workspaceId, table.opportunityType),
+    foreignKey({
+      columns: [table.workspaceId, table.serviceId],
+      foreignColumns: [services.workspaceId, services.id],
+      name: "opportunity_service_mappings_workspace_service_fk",
+    }).onDelete("cascade"),
+  ],
+);
+
+/**
+ * Immutable snapshot of the service recommendations made when an opportunity was generated.
+ * Names, preferred status, prices and currency are copied so historical reports stay readable if the
+ * service is later renamed, repriced, deactivated or deleted (`service_id` is then set to null).
+ */
+export const opportunityServiceRecommendations = pgTable(
+  "opportunity_service_recommendations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    auditId: uuid("audit_id").notNull(),
+    opportunityId: uuid("opportunity_id").notNull(),
+    serviceId: uuid("service_id"),
+    serviceName: text("service_name").notNull(),
+    isPreferred: boolean("is_preferred").default(false).notNull(),
+    rank: integer("rank").notNull(),
+    priceStatus: text("price_status").notNull(),
+    startingPriceMinor: integer("starting_price_minor"),
+    averagePriceMinor: integer("average_price_minor"),
+    currency: text("currency"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    unique("opportunity_service_recommendations_rank_unique").on(table.workspaceId, table.opportunityId, table.rank),
+    unique("opportunity_service_recommendations_service_unique").on(table.workspaceId, table.opportunityId, table.serviceId),
+    uniqueIndex("opportunity_service_recommendations_one_preferred_unique").on(table.workspaceId, table.opportunityId).where(sql`${table.isPreferred}`),
+    index("opportunity_service_recommendations_workspace_opportunity_idx").on(table.workspaceId, table.opportunityId),
+    check("opportunity_service_recommendations_rank_check", sql`${table.rank} >= 1`),
+    check("opportunity_service_recommendations_status_check", sql`${table.priceStatus} in ('configured', 'not_configured', 'invalid')`),
+    check("opportunity_service_recommendations_price_check", sql`(${table.startingPriceMinor} is null or ${table.startingPriceMinor} >= 0) and (${table.averagePriceMinor} is null or ${table.averagePriceMinor} >= 0) and (${table.startingPriceMinor} is null or ${table.averagePriceMinor} is null or ${table.startingPriceMinor} <= ${table.averagePriceMinor})`),
+    check("opportunity_service_recommendations_price_state_check", sql`(${table.priceStatus} = 'configured' and ${table.currency} is not null and (${table.startingPriceMinor} is not null or ${table.averagePriceMinor} is not null)) or (${table.priceStatus} <> 'configured' and ${table.currency} is null and ${table.startingPriceMinor} is null and ${table.averagePriceMinor} is null)`),
+    foreignKey({
+      columns: [table.workspaceId, table.auditId, table.opportunityId],
+      foreignColumns: [opportunities.workspaceId, opportunities.auditId, opportunities.id],
+      name: "opportunity_service_recommendations_workspace_opportunity_fk",
+    }).onDelete("cascade"),
+    // Migration 0011 narrows this to ON DELETE SET NULL (service_id) so workspace_id is preserved.
+    foreignKey({
+      columns: [table.workspaceId, table.serviceId],
+      foreignColumns: [services.workspaceId, services.id],
+      name: "opportunity_service_recommendations_workspace_service_fk",
+    }).onDelete("set null"),
   ],
 );
 
@@ -1026,9 +1164,95 @@ export const campaignProviderEvents = pgTable("campaign_provider_events", {
   foreignKey({ columns: [t.workspaceId, t.messageId], foreignColumns: [campaignMessages.workspaceId, campaignMessages.id], name: "campaign_provider_events_message_fk" }).onDelete("cascade"),
 ]);
 
+/**
+ * Public reference data loaded from an OpenStreetMap extract. It is global (not workspace-owned) and read-only to the
+ * application: discovery copies selected rows into workspace-owned `companies` with source attribution.
+ */
+export const osmSource = pgSchema("osm_source");
+export const osmDatasetStatus = osmSource.enum("dataset_status", ["importing", "ready", "failed", "superseded"]);
+
+export const osmDatasets = osmSource.table(
+  "datasets",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    regionKey: text("region_key").notNull(),
+    regionLabel: text("region_label").notNull(),
+    sourceName: text("source_name").notNull(),
+    sourceUrl: text("source_url").notNull(),
+    sourceDataTimestamp: timestamp("source_data_timestamp", { withTimezone: true }).notNull(),
+    sourceSha256: text("source_sha256"),
+    licenseName: text("license_name").default("Open Database License (ODbL) 1.0").notNull(),
+    licenseUrl: text("license_url").default("https://www.openstreetmap.org/copyright").notNull(),
+    attribution: text("attribution").default("© OpenStreetMap contributors").notNull(),
+    bbox: jsonb("bbox").$type<{ minLon: number; minLat: number; maxLon: number; maxLat: number }>().notNull(),
+    status: osmDatasetStatus("status").default("importing").notNull(),
+    placeCount: integer("place_count").default(0).notNull(),
+    localityCount: integer("locality_count").default(0).notNull(),
+    skippedCount: integer("skipped_count").default(0).notNull(),
+    loaderVersion: text("loader_version").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [index("osm_datasets_region_status_idx").on(table.regionKey, table.status, table.completedAt)],
+);
+
+export const osmPlaces = osmSource.table(
+  "places",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    datasetId: uuid("dataset_id").notNull().references(() => osmDatasets.id, { onDelete: "cascade" }),
+    osmType: text("osm_type").notNull(),
+    osmId: bigint("osm_id", { mode: "number" }).notNull(),
+    name: text("name").notNull(),
+    matchedTags: text("matched_tags").array().notNull(),
+    industry: text("industry"),
+    lat: doublePrecision("lat").notNull(),
+    lon: doublePrecision("lon").notNull(),
+    website: text("website"),
+    phone: text("phone"),
+    email: text("email"),
+    address: text("address"),
+    city: text("city"),
+    province: text("province"),
+    tags: jsonb("tags").$type<Record<string, string>>().default({}).notNull(),
+  },
+  (table) => [
+    uniqueIndex("osm_places_dataset_object_unique").on(table.datasetId, table.osmType, table.osmId),
+    index("osm_places_dataset_location_idx").on(table.datasetId, table.lat, table.lon),
+    index("osm_places_matched_tags_idx").using("gin", table.matchedTags),
+    check("osm_places_osm_type_check", sql`${table.osmType} in ('node', 'way', 'relation')`),
+    check("osm_places_coordinates_check", sql`${table.lat} between -90 and 90 and ${table.lon} between -180 and 180`),
+  ],
+);
+
+export const osmLocalities = osmSource.table(
+  "localities",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    datasetId: uuid("dataset_id").notNull().references(() => osmDatasets.id, { onDelete: "cascade" }),
+    osmType: text("osm_type").notNull(),
+    osmId: bigint("osm_id", { mode: "number" }).notNull(),
+    name: text("name").notNull(),
+    placeType: text("place_type").notNull(),
+    lat: doublePrecision("lat").notNull(),
+    lon: doublePrecision("lon").notNull(),
+    population: integer("population"),
+  },
+  (table) => [
+    uniqueIndex("osm_localities_dataset_object_unique").on(table.datasetId, table.osmType, table.osmId),
+    index("osm_localities_dataset_name_idx").on(table.datasetId, sql`lower(${table.name})`),
+    check("osm_localities_osm_type_check", sql`${table.osmType} in ('node', 'way', 'relation')`),
+    check("osm_localities_place_type_check", sql`${table.placeType} in ('city', 'town', 'suburb', 'village', 'hamlet')`),
+    check("osm_localities_coordinates_check", sql`${table.lat} between -90 and 90 and ${table.lon} between -180 and 180`),
+  ],
+);
+
 export const schema = {
   users,
   accounts,
+  authRateLimitWindows,
+  authActionTokens,
+  authSecurityEvents,
   sessions,
   verificationTokens,
   workspaces,
@@ -1069,4 +1293,7 @@ export const schema = {
   campaignDeliveryUsage,
   campaignUnsubscribeTokens,
   campaignProviderEvents,
+  osmDatasets,
+  osmPlaces,
+  osmLocalities,
 };

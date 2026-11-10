@@ -22,6 +22,7 @@
     "db:studio": "drizzle-kit studio",
     "env:check": "tsx scripts/validate-env.ts",
     "audit:worker": "tsx scripts/run-audit-worker.ts",
+    "osm:extract": "tsx scripts/osm-extract.ts",
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },
   "dependencies": {
@@ -56,7 +57,7 @@
     "eslint-config-next": "16.4.1",
     "jsdom": "27.2.0",
     "tailwindcss": "4.3.3",
-    "tsx": "4.21.0",
+    "tsx": "4.23.15",
     "typescript": "5.9.3",
     "vitest": "5.0.4"
   }
