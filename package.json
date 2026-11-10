@@ -55,7 +55,7 @@
     "eslint-config-next": "16.4.1",
     "jsdom": "27.2.0",
     "tailwindcss": "4.3.3",
-    "tsx": "4.21.0",
+    "tsx": "4.23.15",
     "typescript": "5.9.3",
     "vitest": "5.0.4"
   }
