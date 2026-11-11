@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { AuthShell } from "@/components/auth/auth-shell";
+import { CreatorBrand } from "@/components/brand/hoax1g-brand";
 import { Logo } from "@/components/brand/logo";
-import { Card } from "@/components/ui/card";
 import { getServerEnv } from "@/config/env";
 import { LoginActions } from "./login-actions";
 
@@ -15,16 +16,17 @@ export default function LoginPage() {
   if (env.AUTH_GOOGLE_ID && env.AUTH_GOOGLE_SECRET) providers.push("google");
 
   return (
-    <main className="page-grid grid min-h-screen place-items-center px-6 py-12">
-      <Card className="w-full max-w-md p-7 sm:p-9">
+    <AuthShell>
+      <div className="flex items-center justify-between gap-4">
         <Logo />
-        <h1 className="mt-10 text-3xl font-semibold tracking-tight">Sign in to your workspace</h1>
+        <CreatorBrand className="hidden sm:inline-flex" showArtwork={false} />
+      </div>
+        <p className="mt-10 font-mono text-xs uppercase tracking-[0.18em] text-cyan">Secure workspace access</p>
+        <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">Sign in to your workspace</h1>
         <p className="mt-3 text-sm leading-6 text-muted-foreground">Sign in to access your isolated workspace, opportunity intelligence, and CRM records.</p>
         <div className="mt-8"><LoginActions passwordEnabled={env.PASSWORD_AUTH_ENABLED} providers={providers} /></div>
         {env.PASSWORD_AUTH_ENABLED ? <p className="mt-6 text-sm text-muted-foreground">New to PRIZM.DEV? <Link className="font-medium text-primary hover:underline" href="/signup">Create an account</Link>.</p> : null}
         <p className="mt-8 text-xs leading-5 text-muted-foreground">By continuing, you agree to use business data responsibly and review generated material before external use.</p>
-        <Link className="mt-6 inline-block text-sm text-primary hover:underline" href="/">Back to overview</Link>
-      </Card>
-    </main>
+    </AuthShell>
   );
 }

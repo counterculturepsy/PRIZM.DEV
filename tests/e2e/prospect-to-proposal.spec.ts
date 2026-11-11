@@ -8,7 +8,7 @@ const origin = `http://127.0.0.1:${Number(process.env.PLAYWRIGHT_PORT ?? 3100)}`
 const password = "PlaywrightPassword123";
 const runId = randomUUID();
 const email = `journey-${runId}@example.test`;
-const workspaceName = `Journey ${runId.slice(0, 8)}`;
+const workspaceName = "HOAX1G.DEV";
 const companyName = `Evidence Prospect ${runId.slice(0, 8)}`;
 const companyDomain = `prospect-${runId.slice(0, 8)}.example`;
 let userId: string | null = null;
@@ -56,6 +56,14 @@ test.afterAll(async () => {
 test("authenticated evidence-backed prospect becomes a human-approved proposal without outbound side effects", async ({ page, request }, testInfo) => {
   test.skip(testInfo.project.name !== "chromium", "The stateful vertical slice runs once in desktop Chromium.");
   await register(request);
+  await page.goto("/login");
+  await expect(page.getByRole("heading", { name: "Sign in to your workspace" })).toBeVisible();
+  await expect(page.getByRole("img", { name: /HOAX1G DEV geometric prism artwork/i })).toBeVisible();
+  await page.screenshot({ fullPage: true, path: testInfo.outputPath("login-desktop.png") });
+  await page.setViewportSize({ width: 412, height: 915 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ fullPage: true, path: testInfo.outputPath("login-mobile.png") });
+  await page.setViewportSize({ width: 1280, height: 720 });
   await signIn(page);
 
   await page.getByLabel("Workspace name").fill(workspaceName);
@@ -129,8 +137,28 @@ test("authenticated evidence-backed prospect becomes a human-approved proposal w
   await page.getByLabel("Discount").fill("0");
   await page.getByRole("button", { name: "Create proposal" }).click();
   await expect(page).toHaveURL(/\/app\/proposals\/[0-9a-f-]+$/);
+  const proposalUrl = page.url();
   await expect(page.getByRole("heading", { name: "Immutable source-evidence snapshot" })).toBeVisible();
   await expect(page.getByText("The newsletter input has no associated label.")).toBeVisible();
+
+  await page.goto("/app");
+  await expect(page.getByRole("heading", { name: workspaceName })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Sales funnel" })).toBeVisible();
+  await expect(page.getByText("Total prospects", { exact: true })).toBeVisible();
+  await expect(page.getByText("Audited businesses", { exact: true })).toBeVisible();
+  await expect(page.getByText("Awaiting approval", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Import prospects" })).toHaveAttribute("href", "/app/discover/search");
+  await expect(page.getByRole("link", { name: "View opportunities" })).toHaveAttribute("href", "/app/discover/opportunities");
+  await expect(page.getByLabel("Date range")).toHaveValue("30d");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ fullPage: true, path: testInfo.outputPath("dashboard-desktop.png") });
+  await page.setViewportSize({ width: 412, height: 915 });
+  await expect(page.getByRole("heading", { name: "Priority actions" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ fullPage: true, path: testInfo.outputPath("dashboard-mobile.png") });
+  await page.setViewportSize({ width: 1280, height: 720 });
+
+  await page.goto(proposalUrl);
   await page.getByLabel("Approval note").fill("Evidence, scope, and pricing reviewed by the workspace owner.");
   await page.getByRole("button", { name: "Approve current version" }).click();
   await expect(page.getByText(/approved/i).first()).toBeVisible();
