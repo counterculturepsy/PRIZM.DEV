@@ -60,6 +60,35 @@ describe("serverEnvSchema", () => {
     expect(serverEnvSchema.safeParse({ ...valid, AUTH_EMAIL_REPLY_TO: complete.AUTH_EMAIL_REPLY_TO }).success).toBe(false);
   });
 
+  it("selects and validates Brevo without weakening Resend compatibility", () => {
+    const common = {
+      ...valid,
+      AUTH_EMAIL_FROM: "PRIZM.DEV <countercultureliveact@gmail.com>",
+      ADMIN_NOTIFICATION_EMAIL: "admin@prizm.example",
+    };
+    expect(serverEnvSchema.safeParse({
+      ...common,
+      AUTH_EMAIL_PROVIDER: "brevo",
+      BREVO_API_KEY: "xkeysib-test-key-long-enough",
+    }).success).toBe(true);
+    expect(serverEnvSchema.safeParse({ ...common, AUTH_EMAIL_PROVIDER: "brevo" }).success).toBe(false);
+    expect(serverEnvSchema.safeParse({ ...common, BREVO_API_KEY: "xkeysib-test-key-long-enough" }).success).toBe(false);
+    expect(serverEnvSchema.safeParse({ ...common, AUTH_EMAIL_PROVIDER: "unknown", BREVO_API_KEY: "xkeysib-test-key-long-enough" }).success).toBe(false);
+    expect(serverEnvSchema.safeParse({ ...common, RESEND_API_KEY: "re_test_key_long_enough" }).success).toBe(true);
+  });
+
+  it("rejects malformed authentication sender identities", () => {
+    const configured = {
+      ...valid,
+      AUTH_EMAIL_PROVIDER: "brevo",
+      BREVO_API_KEY: "xkeysib-test-key-long-enough",
+      ADMIN_NOTIFICATION_EMAIL: "admin@prizm.example",
+    };
+    expect(serverEnvSchema.safeParse({ ...configured, AUTH_EMAIL_FROM: "PRIZM.DEV <not-an-email>" }).success).toBe(false);
+    expect(serverEnvSchema.safeParse({ ...configured, AUTH_EMAIL_FROM: "not-an-email" }).success).toBe(false);
+    expect(serverEnvSchema.safeParse({ ...configured, AUTH_EMAIL_FROM: "countercultureliveact@gmail.com" }).success).toBe(true);
+  });
+
   it("rejects ambiguous website audit switches", () => {
     expect(serverEnvSchema.safeParse({ ...valid, WEBSITE_AUDIT_ENABLED: "yes" }).success).toBe(false);
     expect(serverEnvSchema.parse({ ...valid, WEBSITE_AUDIT_ENABLED: "false" }).WEBSITE_AUDIT_ENABLED).toBe(false);

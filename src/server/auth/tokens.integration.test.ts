@@ -98,4 +98,35 @@ describe("authentication action tokens", () => {
     expect(JSON.stringify(await db.select().from(authSecurityEvents))).not.toContain("example.com");
     await client.close();
   });
+
+  it("invalidates the action token when the selected provider cannot deliver it", async () => {
+    const client = new PGlite();
+    const db = drizzle(client);
+    await migrate(db, { migrationsFolder: "drizzle" });
+    const [user] = await db.insert(users).values({
+      email: "undeliverable@example.com",
+      passwordHash: await hashPassword("InitialPassword123"),
+    }).returning();
+    if (!user) throw new Error("user fixture");
+    const delivery: AuthEmailDelivery = {
+      async sendVerification() { throw new Error("provider rejected request"); },
+      async sendPasswordReset() { throw new Error("provider rejected request"); },
+      async sendAccountStatus() { throw new Error("unexpected account status"); },
+      async sendPendingRegistration() { throw new Error("unexpected registration notification"); },
+    };
+    vi.resetModules();
+    vi.doMock("@/server/db", () => ({ getDatabase: () => db }));
+    vi.doMock("@/config/env", () => ({ getServerEnv: () => ({ AUTH_SECRET: "test-auth-secret-that-is-at-least-thirty-two-characters", NEXTAUTH_URL: "https://app.example.test" }) }));
+    const tokens = await import("./tokens");
+    const rawToken = "u".repeat(43);
+    const now = new Date("2026-11-12T10:00:00Z");
+
+    await expect(tokens.requestEmailVerification(user.email, {}, { delivery, now, tokenFactory: () => rawToken }))
+      .resolves.toEqual({ accepted: true, deliveryAvailable: true });
+    await expect(tokens.verifyEmailToken(rawToken, {}, new Date("2026-11-12T10:01:00Z"))).resolves.toBe(false);
+    const [stored] = await db.select().from(authActionTokens);
+    expect(stored?.usedAt?.toISOString()).toBe(now.toISOString());
+    expect(stored?.tokenHash).not.toBe(rawToken);
+    await client.close();
+  });
 });
