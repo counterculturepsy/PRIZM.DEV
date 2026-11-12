@@ -45,6 +45,21 @@ describe("serverEnvSchema", () => {
     expect(serverEnvSchema.safeParse({ ...valid, OAUTH_LOGIN_ENABLED: "yes" }).success).toBe(false);
   });
 
+  it("requires a complete transactional email configuration", () => {
+    const complete = {
+      ...valid,
+      RESEND_API_KEY: "re_test_key_long_enough",
+      AUTH_EMAIL_FROM: "PRIZM.DEV <auth@prizm.example>",
+      AUTH_EMAIL_REPLY_TO: "support@prizm.example",
+      ADMIN_NOTIFICATION_EMAIL: "admin@prizm.example",
+    };
+    expect(serverEnvSchema.safeParse(complete).success).toBe(true);
+    expect(serverEnvSchema.safeParse({ ...valid, RESEND_API_KEY: complete.RESEND_API_KEY }).success).toBe(false);
+    expect(serverEnvSchema.safeParse({ ...valid, AUTH_EMAIL_FROM: complete.AUTH_EMAIL_FROM }).success).toBe(false);
+    expect(serverEnvSchema.safeParse({ ...valid, ADMIN_NOTIFICATION_EMAIL: complete.ADMIN_NOTIFICATION_EMAIL }).success).toBe(false);
+    expect(serverEnvSchema.safeParse({ ...valid, AUTH_EMAIL_REPLY_TO: complete.AUTH_EMAIL_REPLY_TO }).success).toBe(false);
+  });
+
   it("rejects ambiguous website audit switches", () => {
     expect(serverEnvSchema.safeParse({ ...valid, WEBSITE_AUDIT_ENABLED: "yes" }).success).toBe(false);
     expect(serverEnvSchema.parse({ ...valid, WEBSITE_AUDIT_ENABLED: "false" }).WEBSITE_AUDIT_ENABLED).toBe(false);

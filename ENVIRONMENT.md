@@ -10,6 +10,11 @@ Copy `.env.example` to `.env.local`. Never commit real values.
 | `AUTH_GITHUB_ID/SECRET` | Pair | Server | GitHub OAuth |
 | `AUTH_GOOGLE_ID/SECRET` | Pair | Server | Google OAuth (Google/Gmail sign-in); production callback: `https://prizm-dev-sigma.vercel.app/api/auth/callback/google` |
 | `PASSWORD_AUTH_ENABLED` | No | Server | Enables first-party email/password registration and credentials sign-in; defaults to `false` |
+| `OAUTH_LOGIN_ENABLED` | No | Server | Keeps configured OAuth providers available while `true`; disable only after administrator password login is proven |
+| `RESEND_API_KEY` | Email delivery | Server secret | Preview-specific Resend API credential; never expose to the browser |
+| `AUTH_EMAIL_FROM` | Email delivery | Server | Verified sender identity, for example `PRIZM.DEV <auth@verified-domain>` |
+| `AUTH_EMAIL_REPLY_TO` | No | Server | Optional verified reply-to mailbox |
+| `ADMIN_NOTIFICATION_EMAIL` | Email delivery | Server | Private recipient for new pending-registration alerts |
 | `DEV_AUTH_BYPASS` | Local development only | Server | Bypass OAuth using an existing active workspace member; rejected outside `NODE_ENV=development` |
 | `E2E_DATABASE_URL` | Browser tests only | Test runner | Must identify the isolated loopback database named `prizm_e2e`; never point browser tests at staging or production |
 | `INTEGRATION_ENCRYPTION_KEY` | Production integrations | Server | 32-byte base64 envelope key |
@@ -31,7 +36,7 @@ Run `pnpm env:check` before starting a deployment. Empty optional values normali
 
 Development, preview, and production use separate databases, OAuth clients, encryption keys, and provider projects. Rotate secrets through the deployment platform; do not paste them into issues, logs, screenshots, or source files.
 
-Email verification and password-reset delivery are intentionally fail-closed: the server currently has no external email adapter and therefore does not create a deliverable token from a public request. Tests inject a local provider or seed a one-way token hash. Do not enforce verified-email login until an approved provider, sender domain, templates, monitoring and staging delivery test are complete.
+Email verification and password-reset delivery are fail-closed. The server creates a deliverable token only when the complete Resend configuration is present. Configure `RESEND_API_KEY`, `AUTH_EMAIL_FROM` and `ADMIN_NOTIFICATION_EMAIL` together; partial configuration fails environment validation. Verification and reset links are single-use, stored only as SHA-256 hashes and expire after 24 hours and 30 minutes respectively. Approval remains independent from email verification. Do not claim delivery readiness until the sender domain is verified and a real Preview message has been received and opened.
 
 Google sign-in is enabled automatically only when both Google OAuth values are present. Create a Google Cloud Web application client with the exact production origin and callback above, use separate credentials/callbacks for local or preview testing, then add both values as encrypted Vercel variables. Do not use a Gmail password or service-account key.
 

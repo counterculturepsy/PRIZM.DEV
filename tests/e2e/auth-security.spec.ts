@@ -107,12 +107,12 @@ test("a platform administrator can approve an account and a normal user cannot o
   await approveAndVerify(adminEmail, true);
   await signIn(page, adminEmail);
   await expect(page).toHaveURL(/\/app\/workspaces\/new$/);
+  await withDatabase((client) => client.query("update users set email_verified = now() where email = $1", [memberEmail]));
   await page.goto(`/app/admin/users?q=${encodeURIComponent(memberEmail)}&status=pending`);
   await expect(page.getByText(memberEmail)).toBeVisible();
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Approve" }).click();
   await expect(page.getByText(memberEmail)).toHaveCount(0);
-  await withDatabase((client) => client.query("update users set email_verified = now() where email = $1", [memberEmail]));
   await page.goto("/api/auth/signout");
   await signIn(page, memberEmail);
   await expect(page).toHaveURL(/\/app\/workspaces\/new$/);

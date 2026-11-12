@@ -20,6 +20,8 @@ describe("authentication action tokens", () => {
     const delivery: AuthEmailDelivery = {
       async sendVerification(input) { deliveries.push(input.verificationUrl); },
       async sendPasswordReset() { throw new Error("unexpected reset"); },
+      async sendAccountStatus() { throw new Error("unexpected account status"); },
+      async sendPendingRegistration() { throw new Error("unexpected registration notification"); },
     };
     vi.resetModules();
     vi.doMock("@/server/db", () => ({ getDatabase: () => db }));
@@ -56,6 +58,8 @@ describe("authentication action tokens", () => {
     const delivery: AuthEmailDelivery = {
       async sendVerification() { throw new Error("unexpected verification"); },
       async sendPasswordReset(input) { resetUrl = input.resetUrl; },
+      async sendAccountStatus() { throw new Error("unexpected account status"); },
+      async sendPendingRegistration() { throw new Error("unexpected registration notification"); },
     };
     vi.resetModules();
     vi.doMock("@/server/db", () => ({ getDatabase: () => db }));

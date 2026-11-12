@@ -30,6 +30,16 @@ export const serverEnvSchema = z
     AUTH_GOOGLE_SECRET: optionalSecret,
     PASSWORD_AUTH_ENABLED: optionalBoolean.default(false),
     OAUTH_LOGIN_ENABLED: optionalBoolean.default(true),
+    RESEND_API_KEY: optionalSecret,
+    AUTH_EMAIL_FROM: optionalString,
+    AUTH_EMAIL_REPLY_TO: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.email().optional(),
+    ),
+    ADMIN_NOTIFICATION_EMAIL: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.email().optional(),
+    ),
     DEV_AUTH_BYPASS: optionalBoolean.default(false),
     INTEGRATION_ENCRYPTION_KEY: optionalSecret,
     OPENAI_API_KEY: optionalSecret,
@@ -85,6 +95,26 @@ export const serverEnvSchema = z
           message: `${idKey} and ${secretKey} must be configured together`,
         });
       }
+    }
+
+    const emailConfiguration = [
+      value.RESEND_API_KEY,
+      value.AUTH_EMAIL_FROM,
+      value.ADMIN_NOTIFICATION_EMAIL,
+    ];
+    if (emailConfiguration.some(Boolean) && !emailConfiguration.every(Boolean)) {
+      context.addIssue({
+        code: "custom",
+        path: ["RESEND_API_KEY"],
+        message: "RESEND_API_KEY, AUTH_EMAIL_FROM and ADMIN_NOTIFICATION_EMAIL must be configured together",
+      });
+    }
+    if (value.AUTH_EMAIL_REPLY_TO && !value.RESEND_API_KEY) {
+      context.addIssue({
+        code: "custom",
+        path: ["AUTH_EMAIL_REPLY_TO"],
+        message: "AUTH_EMAIL_REPLY_TO requires the complete Resend email configuration",
+      });
     }
   });
 

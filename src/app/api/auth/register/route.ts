@@ -3,6 +3,7 @@ import { hashPassword } from "@/modules/auth/password";
 import { registrationSchema } from "@/modules/auth/validation";
 import { getServerEnv } from "@/config/env";
 import { recordAuthSecurityEvent } from "@/server/auth/events";
+import { getAuthEmailDelivery } from "@/server/auth/email-delivery";
 import { consumeRequestLimits, mutationOriginError } from "@/server/auth/route-security";
 import { requestEmailVerification } from "@/server/auth/tokens";
 import { getDatabase } from "@/server/db";
@@ -59,6 +60,18 @@ export async function POST(request: Request) {
   }
 
   const verification = await requestEmailVerification(parsed.data.email, { clientIp: rateLimit.clientIp });
+  if (createdUserId) {
+    const delivery = getAuthEmailDelivery();
+    if (delivery) {
+      try {
+        const adminUrl = new URL("/app/admin/users?status=pending", getServerEnv().NEXTAUTH_URL).toString();
+        await delivery.sendPendingRegistration({ email: parsed.data.email, name: parsed.data.name, adminUrl });
+        await recordAuthSecurityEvent({ eventType: "pending_registration_notification", outcome: "delivered", userId: createdUserId, clientIp: rateLimit.clientIp });
+      } catch {
+        await recordAuthSecurityEvent({ eventType: "pending_registration_notification", outcome: "delivery_failed", userId: createdUserId, clientIp: rateLimit.clientIp });
+      }
+    }
+  }
   await recordAuthSecurityEvent({
     eventType: "registration",
     outcome: createdUserId ? "created" : "accepted_existing",

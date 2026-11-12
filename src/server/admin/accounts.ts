@@ -1,5 +1,8 @@
 import { and, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
 import { getDatabase } from "@/server/db";
+import { getServerEnv } from "@/config/env";
+import { getAuthEmailDelivery, type AuthEmailDelivery } from "@/server/auth/email-delivery";
+import { recordAuthSecurityEvent } from "@/server/auth/events";
 import { accountApprovalAudits, accountNotificationEvents, users } from "@/server/db/schema";
 import { requireSession } from "@/server/auth/session";
 
@@ -75,21 +78,27 @@ export async function countPendingAdminNotifications() {
   return row?.count ?? 0;
 }
 
-export async function changeAccountStatus(actorUserId: string, targetUserId: string, action: AccountAction): Promise<void> {
+export async function changeAccountStatus(
+  actorUserId: string,
+  targetUserId: string,
+  action: AccountAction,
+  deps: Readonly<{ delivery?: AuthEmailDelivery | null; baseUrl?: string }> = {},
+): Promise<void> {
   if (actorUserId === targetUserId) throw new AccountAdministrationError("Administrators cannot change their own access state.");
   const transition = transitions[action];
   if (!transition) throw new AccountAdministrationError("Unsupported account action.");
   const now = new Date();
 
-  await getDatabase().transaction(async (tx) => {
+  const notificationTarget = await getDatabase().transaction(async (tx) => {
     const [actor] = await tx.select({ approved: users.accountStatus, admin: users.isPlatformAdmin })
       .from(users).where(eq(users.id, actorUserId)).limit(1).for("update");
     if (!actor?.admin || actor.approved !== "approved") throw new AccountAdministrationError("Platform administrator access is required.");
 
-    const [target] = await tx.select({ status: users.accountStatus, isPlatformAdmin: users.isPlatformAdmin })
+    const [target] = await tx.select({ status: users.accountStatus, isPlatformAdmin: users.isPlatformAdmin, email: users.email, name: users.name, emailVerified: users.emailVerified })
       .from(users).where(eq(users.id, targetUserId)).limit(1).for("update");
     if (!target) throw new AccountAdministrationError("The account no longer exists.");
     if (target.isPlatformAdmin) throw new AccountAdministrationError("Platform administrator access cannot be changed from this queue.");
+    if (action === "approve" && !target.emailVerified) throw new AccountAdministrationError("Verify the account email before approving access.");
     if (!transition.from.includes(target.status)) throw new AccountAdministrationError("The account state changed. Refresh and try again.");
 
     const [updated] = await tx.update(users).set({
@@ -119,5 +128,22 @@ export async function changeAccountStatus(actorUserId: string, targetUserId: str
       eq(accountNotificationEvents.audience, "platform_admin"),
       isNull(accountNotificationEvents.readAt),
     ));
+    return { email: target.email, name: target.name, status: transition.to };
   });
+
+  const delivery = deps.delivery === undefined ? getAuthEmailDelivery() : deps.delivery;
+  if (!delivery) return;
+  try {
+    const status = notificationTarget.status === "approved" && action === "reactivate" ? "reactivated" : notificationTarget.status;
+    if (status === "pending") return;
+    await delivery.sendAccountStatus({
+      email: notificationTarget.email,
+      name: notificationTarget.name,
+      status,
+      loginUrl: new URL("/login", deps.baseUrl ?? getServerEnv().NEXTAUTH_URL).toString(),
+    });
+    await recordAuthSecurityEvent({ eventType: "account_status_notification", outcome: "delivered", userId: targetUserId, metadata: { status } });
+  } catch {
+    await recordAuthSecurityEvent({ eventType: "account_status_notification", outcome: "delivery_failed", userId: targetUserId, metadata: { status: notificationTarget.status } });
+  }
 }
