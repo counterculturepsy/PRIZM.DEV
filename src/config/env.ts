@@ -29,6 +29,7 @@ export const serverEnvSchema = z
     AUTH_GOOGLE_ID: optionalString,
     AUTH_GOOGLE_SECRET: optionalSecret,
     PASSWORD_AUTH_ENABLED: optionalBoolean.default(false),
+    OAUTH_LOGIN_ENABLED: optionalBoolean.default(true),
     DEV_AUTH_BYPASS: optionalBoolean.default(false),
     INTEGRATION_ENCRYPTION_KEY: optionalSecret,
     OPENAI_API_KEY: optionalSecret,

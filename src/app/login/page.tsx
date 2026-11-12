@@ -12,8 +12,8 @@ export const dynamic = "force-dynamic";
 export default function LoginPage() {
   const env = getServerEnv();
   const providers: ("github" | "google")[] = [];
-  if (env.AUTH_GITHUB_ID && env.AUTH_GITHUB_SECRET) providers.push("github");
-  if (env.AUTH_GOOGLE_ID && env.AUTH_GOOGLE_SECRET) providers.push("google");
+  if (env.OAUTH_LOGIN_ENABLED && env.AUTH_GITHUB_ID && env.AUTH_GITHUB_SECRET) providers.push("github");
+  if (env.OAUTH_LOGIN_ENABLED && env.AUTH_GOOGLE_ID && env.AUTH_GOOGLE_SECRET) providers.push("google");
 
   return (
     <AuthShell>

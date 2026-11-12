@@ -15,11 +15,13 @@ async function getDevelopmentSession(): Promise<Session | null> {
       name: users.name,
       email: users.email,
       image: users.image,
+      accountStatus: users.accountStatus,
+      isPlatformAdmin: users.isPlatformAdmin,
     })
     .from(users)
     .innerJoin(
       workspaceMembers,
-      and(eq(workspaceMembers.userId, users.id), eq(workspaceMembers.status, "active")),
+      and(eq(workspaceMembers.userId, users.id), eq(workspaceMembers.status, "active"), eq(users.accountStatus, "approved")),
     )
     .innerJoin(
       workspaces,

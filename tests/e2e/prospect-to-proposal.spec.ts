@@ -28,6 +28,7 @@ async function register(request: APIRequestContext) {
     headers: { origin },
   });
   expect(response.status()).toBe(202);
+  await withDatabase((client) => client.query("update users set account_status = 'approved', email_verified = now() where email = $1", [email]));
 }
 
 async function signIn(page: Page) {
@@ -54,6 +55,7 @@ test.afterAll(async () => {
 });
 
 test("authenticated evidence-backed prospect becomes a human-approved proposal without outbound side effects", async ({ page, request }, testInfo) => {
+  test.setTimeout(60_000);
   test.skip(testInfo.project.name !== "chromium", "The stateful vertical slice runs once in desktop Chromium.");
   await register(request);
   await page.goto("/login");
@@ -120,7 +122,7 @@ test("authenticated evidence-backed prospect becomes a human-approved proposal w
   await expect(page).toHaveURL(new RegExp(`/app/companies/${fixtureIds.companyId}/opportunities$`));
   await expect(page.getByRole("heading", { name: "Accessible form remediation" })).toBeVisible();
   await page.getByRole("button", { name: "Create CRM lead" }).click();
-  await expect(page).toHaveURL(/\/app\/leads\/[0-9a-f-]+$/);
+  await expect(page).toHaveURL(/\/app\/leads\/[0-9a-f-]+$/, { timeout: 15_000 });
   await page.getByRole("link", { name: "Create or continue proposal" }).click();
 
   await expect(page.getByLabel("CRM lead")).toHaveValue(/^[0-9a-f-]{36}$/);

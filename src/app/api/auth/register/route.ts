@@ -6,7 +6,7 @@ import { recordAuthSecurityEvent } from "@/server/auth/events";
 import { consumeRequestLimits, mutationOriginError } from "@/server/auth/route-security";
 import { requestEmailVerification } from "@/server/auth/tokens";
 import { getDatabase } from "@/server/db";
-import { users } from "@/server/db/schema";
+import { accountNotificationEvents, users } from "@/server/db/schema";
 
 export async function POST(request: Request) {
   if (!getServerEnv().PASSWORD_AUTH_ENABLED) {
@@ -39,12 +39,21 @@ export async function POST(request: Request) {
   const passwordHash = await hashPassword(parsed.data.password);
   let createdUserId: string | null = null;
   try {
-    const [created] = await getDatabase().insert(users).values({
-      name: parsed.data.name,
-      email: parsed.data.email,
-      passwordHash,
-    }).returning({ id: users.id });
-    createdUserId = created?.id ?? null;
+    createdUserId = await getDatabase().transaction(async (tx) => {
+      const [created] = await tx.insert(users).values({
+        name: parsed.data.name,
+        email: parsed.data.email,
+        passwordHash,
+        accountStatus: "pending",
+      }).returning({ id: users.id });
+      if (!created) return null;
+      await tx.insert(accountNotificationEvents).values({
+        targetUserId: created.id,
+        eventType: "registration_pending",
+        audience: "platform_admin",
+      });
+      return created.id;
+    });
   } catch (error) {
     if (!isUniqueViolation(error)) throw error;
   }

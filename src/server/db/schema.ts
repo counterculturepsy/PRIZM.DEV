@@ -29,6 +29,7 @@ export const workspaceRole = pgEnum("workspace_role", [
   "developer",
   "viewer",
 ]);
+export const accountStatus = pgEnum("account_status", ["pending", "approved", "rejected", "suspended"]);
 export const workspaceStatus = pgEnum("workspace_status", ["active", "suspended", "deleting"]);
 export const membershipStatus = pgEnum("membership_status", ["invited", "active", "suspended"]);
 export const invitationStatus = pgEnum("invitation_status", ["pending", "accepted", "revoked", "expired"]);
@@ -74,6 +75,8 @@ export const users = pgTable(
     passwordHash: text("password_hash"),
     authVersion: integer("auth_version").default(0).notNull(),
     passwordChangedAt: timestamp("password_changed_at", { withTimezone: true }),
+    accountStatus: accountStatus("account_status").default("pending").notNull(),
+    isPlatformAdmin: boolean("is_platform_admin").default(false).notNull(),
     jobTitle: text("job_title"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -280,7 +283,7 @@ export const authRateLimitWindows = pgTable(
   (table) => [
     primaryKey({ columns: [table.kind, table.identifierHash, table.windowStartedAt] }),
     index("auth_rate_limit_windows_updated_idx").on(table.updatedAt),
-    check("auth_rate_limit_windows_kind_check", sql`${table.kind} in ('login', 'login_ip', 'registration', 'registration_ip', 'verification', 'verification_ip', 'verification_complete', 'password_reset', 'password_reset_ip', 'password_reset_complete')`),
+    check("auth_rate_limit_windows_kind_check", sql`${table.kind} in ('login', 'login_ip', 'registration', 'registration_ip', 'verification', 'verification_ip', 'verification_complete', 'password_reset', 'password_reset_ip', 'password_reset_complete', 'password_setup', 'password_setup_ip')`),
     check("auth_rate_limit_windows_hash_check", sql`char_length(${table.identifierHash}) = 64`),
     check("auth_rate_limit_windows_attempts_check", sql`${table.attempts} >= 1`),
   ],
@@ -323,6 +326,43 @@ export const authSecurityEvents = pgTable(
     index("auth_security_events_type_created_idx").on(table.eventType, table.createdAt),
     check("auth_security_events_identifier_hash_check", sql`${table.identifierHash} is null or char_length(${table.identifierHash}) = 64`),
     check("auth_security_events_ip_hash_check", sql`${table.ipHash} is null or char_length(${table.ipHash}) = 64`),
+  ],
+);
+
+export const accountApprovalAudits = pgTable(
+  "account_approval_audits",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    actorUserId: uuid("actor_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+    targetUserId: uuid("target_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+    action: text("action").notNull(),
+    previousStatus: accountStatus("previous_status").notNull(),
+    nextStatus: accountStatus("next_status").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("account_approval_audits_target_created_idx").on(table.targetUserId, table.createdAt),
+    index("account_approval_audits_actor_created_idx").on(table.actorUserId, table.createdAt),
+    check("account_approval_audits_action_check", sql`${table.action} in ('approve', 'reject', 'suspend', 'reactivate')`),
+  ],
+);
+
+export const accountNotificationEvents = pgTable(
+  "account_notification_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    targetUserId: uuid("target_user_id").references(() => users.id, { onDelete: "cascade" }),
+    actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+    eventType: text("event_type").notNull(),
+    audience: text("audience").notNull(),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("account_notification_events_target_created_idx").on(table.targetUserId, table.createdAt),
+    index("account_notification_events_audience_read_idx").on(table.audience, table.readAt, table.createdAt),
+    check("account_notification_events_type_check", sql`${table.eventType} in ('registration_pending', 'account_approved', 'account_rejected', 'account_suspended', 'account_reactivated')`),
+    check("account_notification_events_audience_check", sql`${table.audience} in ('platform_admin', 'user')`),
   ],
 );
 

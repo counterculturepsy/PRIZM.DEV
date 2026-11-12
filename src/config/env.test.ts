@@ -39,6 +39,12 @@ describe("serverEnvSchema", () => {
     expect(serverEnvSchema.safeParse({ ...valid, PASSWORD_AUTH_ENABLED: "yes" }).success).toBe(false);
   });
 
+  it("allows OAuth login to be disabled without deleting provider credentials", () => {
+    expect(serverEnvSchema.parse(valid).OAUTH_LOGIN_ENABLED).toBe(true);
+    expect(serverEnvSchema.parse({ ...valid, OAUTH_LOGIN_ENABLED: "false" }).OAUTH_LOGIN_ENABLED).toBe(false);
+    expect(serverEnvSchema.safeParse({ ...valid, OAUTH_LOGIN_ENABLED: "yes" }).success).toBe(false);
+  });
+
   it("rejects ambiguous website audit switches", () => {
     expect(serverEnvSchema.safeParse({ ...valid, WEBSITE_AUDIT_ENABLED: "yes" }).success).toBe(false);
     expect(serverEnvSchema.parse({ ...valid, WEBSITE_AUDIT_ENABLED: "false" }).WEBSITE_AUDIT_ENABLED).toBe(false);
