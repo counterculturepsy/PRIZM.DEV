@@ -1,0 +1,2 @@
+ALTER TABLE "auth_rate_limit_windows" DROP CONSTRAINT "auth_rate_limit_windows_kind_check";--> statement-breakpoint
+ALTER TABLE "auth_rate_limit_windows" ADD CONSTRAINT "auth_rate_limit_windows_kind_check" CHECK ("auth_rate_limit_windows"."kind" in ('login', 'login_ip', 'registration', 'registration_ip', 'verification', 'verification_ip', 'verification_complete', 'password_reset', 'password_reset_ip', 'password_reset_complete', 'password_setup', 'password_setup_ip'));

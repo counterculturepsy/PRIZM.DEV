@@ -2,6 +2,7 @@ import Link from "next/link";
 
 const links = [
   ["/app/settings/profile", "Profile"],
+  ["/app/settings/security", "Security"],
   ["/app/settings/services", "Services"],
   ["/app/settings/icp", "Ideal customer"],
   ["/app/settings/team", "Team"],

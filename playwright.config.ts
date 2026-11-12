@@ -8,8 +8,12 @@ if (!Number.isInteger(port) || port < 1 || port > 65_535) {
 }
 if (!e2eDatabaseUrl) throw new Error("E2E_DATABASE_URL must identify the isolated local test database.");
 const parsedDatabaseUrl = new URL(e2eDatabaseUrl);
-if (!["127.0.0.1", "localhost"].includes(parsedDatabaseUrl.hostname) || parsedDatabaseUrl.pathname !== "/prizm_e2e") {
-  throw new Error("E2E_DATABASE_URL must identify the isolated loopback prizm_e2e database.");
+const loopbackDatabase = ["127.0.0.1", "localhost"].includes(parsedDatabaseUrl.hostname);
+const approvedPreviewNeonDatabase = process.env.E2E_ALLOW_PREVIEW_NEON === "true"
+  && parsedDatabaseUrl.hostname.endsWith(".neon.tech")
+  && parsedDatabaseUrl.protocol === "postgresql:";
+if ((!loopbackDatabase && !approvedPreviewNeonDatabase) || parsedDatabaseUrl.pathname !== "/prizm_e2e") {
+  throw new Error("E2E_DATABASE_URL must identify the isolated prizm_e2e database on loopback or an explicitly approved Preview Neon host.");
 }
 
 export default defineConfig({

@@ -12,6 +12,11 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
+  // Keep verification builds separate from the live development server's cache.
+  distDir: process.env.NEXT_DIST_DIR || ".next",
+  images: {
+    qualities: [75, 92],
+  },
   // Dev only: without this, a browser on 127.0.0.1 has its hot-reload socket blocked and the page reloads in a loop.
   allowedDevOrigins: ["127.0.0.1"],
   async headers() {

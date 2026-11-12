@@ -3,7 +3,7 @@ import type { NextAuthOptions } from "next-auth";
 import GitHubProvider from "next-auth/providers/github";
 import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getServerEnv } from "@/config/env";
 import { loginSchema } from "@/modules/auth/validation";
 import { hashPassword, verifyPassword } from "@/modules/auth/password";
@@ -35,7 +35,17 @@ if (env.PASSWORD_AUTH_ENABLED) {
 
       const clientIp = trustedClientIp(request.headers ?? {});
       const [user] = await getDatabase()
-        .select({ id: users.id, name: users.name, email: users.email, image: users.image, passwordHash: users.passwordHash, authVersion: users.authVersion })
+        .select({
+          id: users.id,
+          name: users.name,
+          email: users.email,
+          image: users.image,
+          passwordHash: users.passwordHash,
+          authVersion: users.authVersion,
+          emailVerified: users.emailVerified,
+          accountStatus: users.accountStatus,
+          isPlatformAdmin: users.isPlatformAdmin,
+        })
         .from(users)
         .where(eq(users.email, parsed.data.email))
         .limit(1);
@@ -46,18 +56,36 @@ if (env.PASSWORD_AUTH_ENABLED) {
         await recordAuthSecurityEvent({ eventType: "login", outcome: "invalid_credentials", userId: user?.id, identifier: parsed.data.email, clientIp });
         return null;
       }
+      if (!user.emailVerified || user.accountStatus !== "approved") {
+        await recordAuthSecurityEvent({
+          eventType: "login",
+          outcome: !user.emailVerified ? "email_unverified" : `account_${user.accountStatus}`,
+          userId: user.id,
+          identifier: parsed.data.email,
+          clientIp,
+        });
+        return null;
+      }
       await clearAuthRateLimit("login", parsed.data.email);
       await recordAuthSecurityEvent({ eventType: "login", outcome: "success", userId: user.id, identifier: parsed.data.email, clientIp });
-      return { id: user.id, name: user.name, email: user.email, image: user.image, authVersion: user.authVersion };
+      return {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        image: user.image,
+        authVersion: user.authVersion,
+        accountStatus: user.accountStatus,
+        isPlatformAdmin: user.isPlatformAdmin,
+      };
     },
   }));
 }
 
-if (env.AUTH_GITHUB_ID && env.AUTH_GITHUB_SECRET) {
+if (env.OAUTH_LOGIN_ENABLED && env.AUTH_GITHUB_ID && env.AUTH_GITHUB_SECRET) {
   providers.push(GitHubProvider({ clientId: env.AUTH_GITHUB_ID, clientSecret: env.AUTH_GITHUB_SECRET }));
 }
 
-if (env.AUTH_GOOGLE_ID && env.AUTH_GOOGLE_SECRET) {
+if (env.OAUTH_LOGIN_ENABLED && env.AUTH_GOOGLE_ID && env.AUTH_GOOGLE_SECRET) {
   providers.push(GoogleProvider({
     clientId: env.AUTH_GOOGLE_ID,
     clientSecret: env.AUTH_GOOGLE_SECRET,
@@ -78,24 +106,63 @@ export const authOptions: NextAuthOptions = {
   jwt: { maxAge: 12 * 60 * 60 },
   pages: { signIn: "/login" },
   callbacks: {
+    async signIn({ user, account }) {
+      if (!user.id || !account) return false;
+      const current = account.type === "oauth"
+        ? (await getDatabase()
+            .select({ accountStatus: users.accountStatus })
+            .from(accounts)
+            .innerJoin(users, eq(users.id, accounts.userId))
+            .where(and(eq(accounts.provider, account.provider), eq(accounts.providerAccountId, account.providerAccountId)))
+            .limit(1))[0]
+        : (await getDatabase()
+            .select({ accountStatus: users.accountStatus })
+            .from(users)
+            .where(eq(users.id, user.id))
+            .limit(1))[0];
+      return current?.accountStatus === "approved";
+    },
     async jwt({ token, user }) {
       if (user?.id) {
+        const [current] = await getDatabase()
+          .select({ authVersion: users.authVersion, accountStatus: users.accountStatus, isPlatformAdmin: users.isPlatformAdmin })
+          .from(users)
+          .where(eq(users.id, user.id))
+          .limit(1);
+        if (!current || current.accountStatus !== "approved") {
+          delete token.sub;
+          token.invalidated = true;
+          return token;
+        }
         token.sub = user.id;
-        token.authVersion = user.authVersion ?? 0;
+        token.authVersion = current.authVersion;
+        token.accountStatus = current.accountStatus;
+        token.isPlatformAdmin = current.isPlatformAdmin;
         token.invalidated = false;
         return token;
       }
       if (token.sub) {
-        const [current] = await getDatabase().select({ authVersion: users.authVersion }).from(users).where(eq(users.id, token.sub)).limit(1);
-        if (!current || current.authVersion !== token.authVersion) {
+        const [current] = await getDatabase()
+          .select({ authVersion: users.authVersion, accountStatus: users.accountStatus, isPlatformAdmin: users.isPlatformAdmin })
+          .from(users)
+          .where(eq(users.id, token.sub))
+          .limit(1);
+        if (!current || current.authVersion !== token.authVersion || current.accountStatus !== "approved") {
           delete token.sub;
           token.invalidated = true;
+        } else {
+          token.accountStatus = current.accountStatus;
+          token.isPlatformAdmin = current.isPlatformAdmin;
         }
       }
       return token;
     },
     session({ session, token }) {
-      if (session.user) session.user.id = token.sub && !token.invalidated ? token.sub : "";
+      if (session.user) {
+        session.user.id = token.sub && !token.invalidated ? token.sub : "";
+        session.user.accountStatus = token.accountStatus ?? "pending";
+        session.user.isPlatformAdmin = Boolean(token.isPlatformAdmin);
+      }
       return session;
     },
   },

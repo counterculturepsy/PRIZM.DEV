@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/form-controls";
 
 export function SignupForm() {
+  const router = useRouter();
   const [message, setMessage] = useState("");
   const [pending, setPending] = useState(false);
 
@@ -27,9 +29,8 @@ export function SignupForm() {
     }
 
     setPending(false);
-    setMessage(result.deliveryAvailable
-      ? "Check your email for a verification link before signing in."
-      : "Your account request was accepted. Verification email delivery is not configured yet; contact the operator for controlled verification.");
+    const delivery = result.deliveryAvailable ? "sent" : "unavailable";
+    router.push(`/signup/pending?verification=${delivery}`);
   }
 
   return (
