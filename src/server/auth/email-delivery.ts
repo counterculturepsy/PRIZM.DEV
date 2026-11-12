@@ -10,6 +10,31 @@ export type AuthEmailDelivery = Readonly<{
 
 const REQUEST_TIMEOUT_MS = 10_000;
 
+type AuthEmailProvider = "resend" | "brevo";
+type AuthEmailFailureCategory = "provider_rejected" | "invalid_response" | "timeout" | "network_error";
+
+function logAuthEmailFailure(
+  provider: AuthEmailProvider,
+  httpStatus: number | null,
+  category: AuthEmailFailureCategory,
+): void {
+  console.error("auth_email_delivery_failed", { provider, httpStatus, category });
+}
+
+async function sendProviderRequest(
+  provider: AuthEmailProvider,
+  url: string,
+  init: RequestInit,
+): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch (error) {
+    const category = error instanceof Error && error.name === "TimeoutError" ? "timeout" : "network_error";
+    logAuthEmailFailure(provider, null, category);
+    throw error;
+  }
+}
+
 function parseEmailIdentity(value: string): { email: string; name?: string } {
   const match = value.trim().match(/^(?:([^<>]+?)\s*<([^<>]+)>|([^<>\s]+))$/);
   const email = (match?.[2] ?? match?.[3])?.trim();
@@ -25,7 +50,7 @@ async function sendWithResend(
   to: string,
   message: BrandedEmail,
 ): Promise<void> {
-  const response = await fetch("https://api.resend.com/emails", {
+  const response = await sendProviderRequest("resend", "https://api.resend.com/emails", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -42,7 +67,10 @@ async function sendWithResend(
     cache: "no-store",
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
-  if (!response.ok) throw new Error(`Transactional email provider rejected the request (${response.status}).`);
+  if (!response.ok) {
+    logAuthEmailFailure("resend", response.status, "provider_rejected");
+    throw new Error(`Transactional email provider rejected the request (${response.status}).`);
+  }
 }
 
 async function sendWithBrevo(
@@ -52,7 +80,7 @@ async function sendWithBrevo(
   to: string,
   message: BrandedEmail,
 ): Promise<void> {
-  const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+  const response = await sendProviderRequest("brevo", "https://api.brevo.com/v3/smtp/email", {
     method: "POST",
     headers: {
       Accept: "application/json",
@@ -71,10 +99,12 @@ async function sendWithBrevo(
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (response.status !== 201) {
+    logAuthEmailFailure("brevo", response.status, "provider_rejected");
     throw new Error(`Transactional email provider rejected the request (${response.status}).`);
   }
   const body: unknown = await response.json().catch(() => null);
   if (!body || typeof body !== "object" || !("messageId" in body) || typeof body.messageId !== "string" || !body.messageId.trim()) {
+    logAuthEmailFailure("brevo", response.status, "invalid_response");
     throw new Error("Transactional email provider returned an invalid response.");
   }
 }
