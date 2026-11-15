@@ -21,6 +21,10 @@ function logAuthEmailFailure(
   console.error("auth_email_delivery_failed", { provider, httpStatus, category });
 }
 
+function logAuthEmailAcceptance(provider: AuthEmailProvider, httpStatus: number): void {
+  console.info("auth_email_delivery_accepted", { provider, httpStatus, messageIdPresent: true });
+}
+
 async function sendProviderRequest(
   provider: AuthEmailProvider,
   url: string,
@@ -53,6 +57,7 @@ async function sendWithResend(
   const response = await sendProviderRequest("resend", "https://api.resend.com/emails", {
     method: "POST",
     headers: {
+      Accept: "application/json",
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
@@ -71,6 +76,12 @@ async function sendWithResend(
     logAuthEmailFailure("resend", response.status, "provider_rejected");
     throw new Error(`Transactional email provider rejected the request (${response.status}).`);
   }
+  const body: unknown = await response.json().catch(() => null);
+  if (!body || typeof body !== "object" || !("id" in body) || typeof body.id !== "string" || !body.id.trim()) {
+    logAuthEmailFailure("resend", response.status, "invalid_response");
+    throw new Error("Transactional email provider returned an invalid response.");
+  }
+  logAuthEmailAcceptance("resend", response.status);
 }
 
 async function sendWithBrevo(
@@ -107,6 +118,7 @@ async function sendWithBrevo(
     logAuthEmailFailure("brevo", response.status, "invalid_response");
     throw new Error("Transactional email provider returned an invalid response.");
   }
+  logAuthEmailAcceptance("brevo", response.status);
 }
 
 export function getAuthEmailDelivery(): AuthEmailDelivery | null {
