@@ -138,4 +138,55 @@ describe("client acquisition dashboard queries", () => {
       await client.close();
     }
   });
+
+  it("treats every opportunity of a company with a CRM lead as reviewed and fills the feed from one busy source", async () => {
+    const client = new PGlite();
+    const db = drizzle(client);
+    await migrate(db, { migrationsFolder: "drizzle" });
+    try {
+      const [user] = await db.insert(users).values({ email: "busy@dashboard.example" }).returning({ id: users.id });
+      const [workspace] = await db.insert(workspaces).values({ name: "Busy", slug: "dashboard-busy" }).returning({ id: workspaces.id });
+      if (!user || !workspace) throw new Error("Busy fixtures were not created");
+      await db.insert(workspaceMembers).values({ workspaceId: workspace.id, userId: user.id, role: "owner", status: "active", joinedAt: new Date("2026-01-01T00:00:00Z") });
+      const [converted, pending] = await db.insert(companies).values([
+        { workspaceId: workspace.id, name: "Converted Co", dedupeKey: "converted-co", createdAt: new Date("2026-03-20T00:00:00Z") },
+        { workspaceId: workspace.id, name: "Pending Co", dedupeKey: "pending-co", createdAt: new Date("2026-03-20T00:00:00Z") },
+      ]).returning({ id: companies.id });
+      if (!converted || !pending) throw new Error("Busy companies were not created");
+
+      const [convertedSite, pendingSite] = await db.insert(websites).values([
+        { workspaceId: workspace.id, companyId: converted.id, url: "https://converted.example", normalizedOrigin: "https://converted.example" },
+        { workspaceId: workspace.id, companyId: pending.id, url: "https://pending.example", normalizedOrigin: "https://pending.example" },
+      ]).returning({ id: websites.id });
+      if (!convertedSite || !pendingSite) throw new Error("Busy websites were not created");
+      const [convertedAudit, pendingAudit] = await db.insert(websiteAudits).values([
+        { workspaceId: workspace.id, websiteId: convertedSite.id, requestedByUserId: user.id, status: "completed", authorizationBasis: "fixture", completedAt: new Date("2026-03-26T00:00:00Z") },
+        { workspaceId: workspace.id, websiteId: pendingSite.id, requestedByUserId: user.id, status: "completed", authorizationBasis: "fixture", completedAt: new Date("2026-03-26T00:00:00Z") },
+      ]).returning({ id: websiteAudits.id });
+      if (!convertedAudit || !pendingAudit) throw new Error("Busy audits were not created");
+
+      const opportunityValues = (companyId: string, auditId: string, title: string, type: "website_improvement" | "seo_improvement" = "website_improvement") => ({ workspaceId: workspace.id, companyId, auditId, type, title, summary: "Evidence", businessImpact: "Impact", recommendedSolution: "Fix", createdAt: new Date("2026-03-27T00:00:00Z") });
+      const [firstOpportunity] = await db.insert(opportunities).values([
+        opportunityValues(converted.id, convertedAudit.id, "Converted first"),
+        opportunityValues(converted.id, convertedAudit.id, "Converted second", "seo_improvement"),
+        opportunityValues(pending.id, pendingAudit.id, "Still unreviewed"),
+      ]).returning({ id: opportunities.id });
+      if (!firstOpportunity) throw new Error("Busy opportunities were not created");
+      const [lead] = await db.insert(leads).values({ workspaceId: workspace.id, companyId: converted.id, sourceOpportunityId: firstOpportunity.id, title: "Converted lead", status: "qualified", createdAt: new Date("2026-03-28T00:00:00Z") }).returning({ id: leads.id });
+      if (!lead) throw new Error("Busy lead was not created");
+      await db.insert(crmActivities).values(Array.from({ length: 12 }, (_, index) => ({ workspaceId: workspace.id, leadId: lead.id, actorUserId: user.id, type: "lead_created" as const, summary: `Activity ${index}`, occurredAt: new Date(Date.UTC(2026, 2, 29, index)) })));
+
+      vi.resetModules();
+      vi.doMock("@/server/db", () => ({ getDatabase: () => db }));
+      const { getClientAcquisitionDashboard, parseDashboardFilters } = await import("./queries");
+      const scope = createWorkspaceScope({ workspaceId: workspace.id, userId: user.id, role: "owner" });
+      const report = await getClientAcquisitionDashboard(scope, parseDashboardFilters({ range: "30d" }), new Date("2026-04-01T00:00:00Z"));
+
+      expect(report.priorities.unreviewedOpportunities.map(({ label }) => label)).toEqual(["Still unreviewed"]);
+      expect(report.recentActivity.filter(({ kind }) => kind === "crm")).toHaveLength(10);
+      expect(report.recentActivity).toHaveLength(10);
+    } finally {
+      await client.close();
+    }
+  });
 });

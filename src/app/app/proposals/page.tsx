@@ -4,11 +4,13 @@ import { CreateProposalForm } from "@/components/forms/proposal-forms";
 import { Card } from "@/components/ui/card";
 import { hasCapability } from "@/modules/workspaces/scope";
 import { listCrmLeads } from "@/server/crm/queries";
-import { listProposals } from "@/server/proposals/service";
+import { listProposals, proposalListStatuses, type ProposalListStatus } from "@/server/proposals/service";
 import { getWorkspaceContext } from "@/server/workspaces/context";
-export default async function ProposalsPage({ searchParams }: { searchParams: Promise<{ leadId?: string | string[] | undefined }> }) {
+export default async function ProposalsPage({ searchParams }: { searchParams: Promise<{ leadId?: string | string[] | undefined; status?: string | string[] | undefined }> }) {
   const { scope } = await getWorkspaceContext("read");
-  const [rows, leads, query] = await Promise.all([listProposals(scope), listCrmLeads(scope), searchParams]);
+  const query = await searchParams;
+  const statusFilter = proposalListStatuses.find((value): value is ProposalListStatus => value === query.status);
+  const [rows, leads] = await Promise.all([listProposals(scope, statusFilter ? { status: statusFilter } : {}), listCrmLeads(scope)]);
   const requestedLeadId = typeof query.leadId === "string" ? query.leadId : undefined;
   const selectedLeadId = leads.some((lead) => lead.id === requestedLeadId) ? requestedLeadId : undefined;
   const canWrite = hasCapability(scope, "write");

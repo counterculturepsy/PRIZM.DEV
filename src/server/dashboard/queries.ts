@@ -74,6 +74,8 @@ export type ClientAcquisitionDashboard = Readonly<{
 }>;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+// Each activity source must supply at least the feed size, or one busy source would hide newer events.
+const ACTIVITY_FEED_SIZE = 10;
 
 function numeric(value: unknown): number {
   const parsed = typeof value === "number" ? value : Number(value ?? 0);
@@ -164,28 +166,28 @@ export async function getClientAcquisitionDashboard(
       .where(and(tenantWhere(proposals.workspaceId, scope), eq(proposals.status, "approved"), withinRange(proposals.approvedAt, start, asOf))),
     db.select({ id: discoveryRuns.id, provider: discoveryRuns.provider, status: discoveryRuns.status, resultCount: discoveryRuns.resultCount, occurredAt: discoveryRuns.startedAt })
       .from(discoveryRuns).where(and(tenantWhere(discoveryRuns.workspaceId, scope), withinRange(discoveryRuns.startedAt, start, asOf)))
-      .orderBy(desc(discoveryRuns.startedAt)).limit(5),
+      .orderBy(desc(discoveryRuns.startedAt)).limit(ACTIVITY_FEED_SIZE),
     db.select({ id: websiteAudits.id, status: websiteAudits.status, company: companies.name, occurredAt: websiteAudits.completedAt })
       .from(websiteAudits)
       .innerJoin(websites, and(eq(websites.workspaceId, websiteAudits.workspaceId), eq(websites.id, websiteAudits.websiteId)))
       .innerJoin(companies, and(eq(companies.workspaceId, websites.workspaceId), eq(companies.id, websites.companyId)))
       .where(and(tenantWhere(websiteAudits.workspaceId, scope), inArray(websiteAudits.status, ["completed", "partial"]), withinRange(websiteAudits.completedAt, start, asOf)))
-      .orderBy(desc(websiteAudits.completedAt)).limit(5),
+      .orderBy(desc(websiteAudits.completedAt)).limit(ACTIVITY_FEED_SIZE),
     db.select({ id: opportunities.id, title: opportunities.title, company: companies.name, occurredAt: opportunities.createdAt })
       .from(opportunities).innerJoin(companies, and(eq(companies.workspaceId, opportunities.workspaceId), eq(companies.id, opportunities.companyId)))
       .where(and(tenantWhere(opportunities.workspaceId, scope), withinRange(opportunities.createdAt, start, asOf)))
-      .orderBy(desc(opportunities.createdAt)).limit(5),
+      .orderBy(desc(opportunities.createdAt)).limit(ACTIVITY_FEED_SIZE),
     db.select({ id: crmActivities.id, summary: crmActivities.summary, leadId: crmActivities.leadId, occurredAt: crmActivities.occurredAt })
       .from(crmActivities).where(and(tenantWhere(crmActivities.workspaceId, scope), withinRange(crmActivities.occurredAt, start, asOf)))
-      .orderBy(desc(crmActivities.occurredAt)).limit(5),
+      .orderBy(desc(crmActivities.occurredAt)).limit(ACTIVITY_FEED_SIZE),
     db.select({ id: auditLogs.id, action: auditLogs.action, targetId: auditLogs.targetId, occurredAt: auditLogs.createdAt })
       .from(auditLogs).where(and(tenantWhere(auditLogs.workspaceId, scope), eq(auditLogs.targetType, "proposal"), withinRange(auditLogs.createdAt, start, asOf)))
-      .orderBy(desc(auditLogs.createdAt)).limit(5),
+      .orderBy(desc(auditLogs.createdAt)).limit(ACTIVITY_FEED_SIZE),
     db.select({ id: crmTasks.id, title: crmTasks.title, leadId: crmTasks.leadId, dueAt: crmTasks.dueAt })
       .from(crmTasks).where(and(tenantWhere(crmTasks.workspaceId, scope), eq(crmTasks.status, "open"), lte(crmTasks.dueAt, asOf)))
       .orderBy(crmTasks.dueAt).limit(5),
     db.select({ id: opportunities.id, title: opportunities.title }).from(opportunities)
-      .leftJoin(leads, and(eq(leads.workspaceId, opportunities.workspaceId), eq(leads.sourceOpportunityId, opportunities.id)))
+      .leftJoin(leads, and(eq(leads.workspaceId, opportunities.workspaceId), eq(leads.companyId, opportunities.companyId)))
       .where(and(tenantWhere(opportunities.workspaceId, scope), isNull(leads.id), withinRange(opportunities.createdAt, start, asOf)))
       .orderBy(desc(opportunities.createdAt)).limit(5),
     db.select({ count: sql<number>`count(*)::int` }).from(proposals)
@@ -223,7 +225,7 @@ export async function getClientAcquisitionDashboard(
     ...opportunityActivity.map((row) => ({ id: `opportunity-${row.id}`, kind: "opportunity" as const, title: row.title, detail: `Opportunity identified for ${row.company}`, occurredAt: row.occurredAt, href: "/app/discover/opportunities" })),
     ...crmActivity.map((row) => ({ id: `crm-${row.id}`, kind: "crm" as const, title: "CRM activity", detail: row.summary, occurredAt: row.occurredAt, href: `/app/leads/${row.leadId}` })),
     ...proposalActivity.map((row) => ({ id: `proposal-${row.id}`, kind: "proposal" as const, title: row.action.replaceAll(".", " ").replaceAll("_", " "), detail: "Proposal lifecycle event", occurredAt: row.occurredAt, href: row.targetId ? `/app/proposals/${row.targetId}` : "/app/proposals" })),
-  ].sort((left, right) => right.occurredAt.getTime() - left.occurredAt.getTime()).slice(0, 10);
+  ].sort((left, right) => right.occurredAt.getTime() - left.occurredAt.getTime()).slice(0, ACTIVITY_FEED_SIZE);
 
   return {
     asOf: new Date(asOf),
