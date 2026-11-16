@@ -21,7 +21,7 @@ export function SignupForm() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(credentials),
     });
-    const result = await response.json() as { message?: string; deliveryAvailable?: boolean };
+    const result = await response.json() as { message?: string };
     if (!response.ok) {
       setPending(false);
       setMessage(result.message ?? "Account creation failed. Please try again.");
@@ -29,8 +29,7 @@ export function SignupForm() {
     }
 
     setPending(false);
-    const delivery = result.deliveryAvailable ? "sent" : "unavailable";
-    router.push(`/signup/pending?verification=${delivery}`);
+    router.push("/signup/pending");
   }
 
   return (

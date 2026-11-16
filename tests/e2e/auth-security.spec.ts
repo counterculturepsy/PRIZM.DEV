@@ -73,10 +73,10 @@ test("registration accepts a new account without exposing whether an account alr
   const email = `register-${randomUUID()}@example.test`;
   const created = await register(request, email);
   expect(created.status()).toBe(202);
-  await expect(created.json()).resolves.toMatchObject({ accepted: true, verificationRequired: true, deliveryAvailable: false });
+  await expect(created.json()).resolves.toEqual({ accepted: true });
   const duplicate = await register(request, email);
   expect(duplicate.status()).toBe(202);
-  await expect(duplicate.json()).resolves.toMatchObject({ accepted: true, verificationRequired: true, deliveryAvailable: false });
+  await expect(duplicate.json()).resolves.toEqual({ accepted: true });
   const state = await withDatabase((client) => client.query("select account_status from users where email = $1", [email]));
   expect(state.rows[0]).toMatchObject({ account_status: "pending" });
 });

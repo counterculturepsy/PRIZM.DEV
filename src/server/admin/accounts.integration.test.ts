@@ -22,9 +22,10 @@ async function setup() {
   vi.resetModules();
   vi.doMock("@/server/db", () => ({ getDatabase: () => db }));
   vi.doMock("@/server/auth/session", () => ({ requireSession: vi.fn() }));
-  vi.doMock("@/server/auth/events", () => ({ recordAuthSecurityEvent: vi.fn() }));
+  const recordAuthSecurityEvent = vi.fn();
+  vi.doMock("@/server/auth/events", () => ({ recordAuthSecurityEvent }));
   const service = await import("./accounts");
-  return { client, db, admin, secondAdmin, owner, pending, ...service };
+  return { client, db, admin, secondAdmin, owner, pending, recordAuthSecurityEvent, ...service };
 }
 
 describe("platform account administration", () => {
@@ -43,7 +44,7 @@ describe("platform account administration", () => {
   });
 
   it("delivers an approval notification to the affected account", async () => {
-    const { client, admin, pending, changeAccountStatus } = await setup();
+    const { client, admin, pending, changeAccountStatus, recordAuthSecurityEvent } = await setup();
     const notifications: Array<{ email: string; status: string }> = [];
     const delivery: AuthEmailDelivery = {
       async sendVerification() { throw new Error("unexpected verification"); },
@@ -53,11 +54,16 @@ describe("platform account administration", () => {
     };
     await changeAccountStatus(admin.id, pending.id, "approve", { delivery, baseUrl: "https://preview.example.test" });
     expect(notifications).toEqual([{ email: pending.email, status: "approved" }]);
+    expect(recordAuthSecurityEvent).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "account_status_notification",
+      outcome: "provider_accepted",
+      userId: pending.id,
+    }));
     await client.close();
   });
 
   it("keeps a committed approval when the email provider fails", async () => {
-    const { client, db, admin, pending, changeAccountStatus } = await setup();
+    const { client, db, admin, pending, changeAccountStatus, recordAuthSecurityEvent } = await setup();
     const delivery: AuthEmailDelivery = {
       async sendVerification() { throw new Error("unexpected verification"); },
       async sendPasswordReset() { throw new Error("unexpected reset"); },
@@ -68,6 +74,11 @@ describe("platform account administration", () => {
     const [updated] = await db.select().from(users).where(eq(users.id, pending.id));
     expect(updated?.accountStatus).toBe("approved");
     expect(await db.select().from(accountApprovalAudits)).toHaveLength(1);
+    expect(recordAuthSecurityEvent).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "account_status_notification",
+      outcome: "delivery_failed",
+      userId: pending.id,
+    }));
     await client.close();
   });
 

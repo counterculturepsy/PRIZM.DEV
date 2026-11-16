@@ -13,6 +13,6 @@ export async function POST(request: Request) {
   if (!parsed.success) return NextResponse.json({ message: "Enter a valid email address." }, { status: 400 });
   const limit = await consumeRequestLimits(request, parsed.data, "password_reset", "password_reset_ip");
   if (!limit.allowed) return NextResponse.json({ message: "Too many requests. Try again later." }, { status: 429, headers: { "Cache-Control": "no-store", "Retry-After": String(limit.retryAfterSeconds) } });
-  const result = await requestPasswordReset(parsed.data, { clientIp: limit.clientIp });
-  return NextResponse.json({ accepted: true, deliveryAvailable: result.deliveryAvailable }, { status: 202, headers: { "Cache-Control": "no-store" } });
+  await requestPasswordReset(parsed.data, { clientIp: limit.clientIp });
+  return NextResponse.json({ accepted: true }, { status: 202, headers: { "Cache-Control": "no-store" } });
 }

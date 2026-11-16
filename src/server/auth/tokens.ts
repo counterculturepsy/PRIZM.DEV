@@ -5,11 +5,12 @@ import { passwordSchema } from "@/modules/auth/validation";
 import { hashPassword } from "@/modules/auth/password";
 import { getDatabase } from "@/server/db";
 import { authActionTokens, sessions, users } from "@/server/db/schema";
+import { getConfiguredAuthEmailDelivery } from "./delivery-config";
 import type { AuthEmailDelivery } from "./email-delivery";
-import { getAuthEmailDelivery } from "./email-delivery";
 import { recordAuthSecurityEvent } from "./events";
 
 type TokenPurpose = "email_verification" | "password_reset";
+export type AuthEmailDeliveryOutcome = "provider_accepted" | "provider_failed" | "provider_unavailable" | "ineligible";
 type RequestContext = Readonly<{ clientIp?: string | null }>;
 type TokenRequestDeps = Readonly<{
   delivery?: AuthEmailDelivery | null;
@@ -53,18 +54,18 @@ export async function requestEmailVerification(
   email: string,
   context: RequestContext = {},
   deps: TokenRequestDeps = {},
-): Promise<{ accepted: true; deliveryAvailable: boolean }> {
+): Promise<{ accepted: true; deliveryOutcome: AuthEmailDeliveryOutcome }> {
   const now = deps.now ?? new Date();
-  const delivery = deps.delivery === undefined ? getAuthEmailDelivery() : deps.delivery;
   const [user] = await getDatabase().select({ id: users.id, email: users.email, name: users.name, emailVerified: users.emailVerified })
     .from(users).where(eq(users.email, email)).limit(1);
   if (!user || user.emailVerified) {
     await recordAuthSecurityEvent({ eventType: "email_verification_requested", outcome: "accepted", identifier: email, clientIp: context.clientIp });
-    return { accepted: true, deliveryAvailable: Boolean(delivery) };
+    return { accepted: true, deliveryOutcome: "ineligible" };
   }
+  const delivery = deps.delivery === undefined ? getConfiguredAuthEmailDelivery() : deps.delivery;
   if (!delivery) {
     await recordAuthSecurityEvent({ eventType: "email_verification_requested", outcome: "delivery_unavailable", userId: user.id, identifier: email, clientIp: context.clientIp });
-    return { accepted: true, deliveryAvailable: false };
+    return { accepted: true, deliveryOutcome: "provider_unavailable" };
   }
 
   const issued = await issueToken(user.id, "email_verification", now, VERIFICATION_TTL_MS, deps.tokenFactory ?? secureToken);
@@ -72,12 +73,13 @@ export async function requestEmailVerification(
   url.searchParams.set("token", issued.rawToken);
   try {
     await delivery.sendVerification({ email: user.email, name: user.name, verificationUrl: url.toString(), expiresAt: issued.expiresAt });
-    await recordAuthSecurityEvent({ eventType: "email_verification_requested", outcome: "delivered", userId: user.id, identifier: email, clientIp: context.clientIp });
+    await recordAuthSecurityEvent({ eventType: "email_verification_requested", outcome: "provider_accepted", userId: user.id, identifier: email, clientIp: context.clientIp });
+    return { accepted: true, deliveryOutcome: "provider_accepted" };
   } catch {
     await getDatabase().update(authActionTokens).set({ usedAt: now }).where(eq(authActionTokens.tokenHash, tokenHash(issued.rawToken)));
     await recordAuthSecurityEvent({ eventType: "email_verification_requested", outcome: "delivery_failed", userId: user.id, identifier: email, clientIp: context.clientIp });
+    return { accepted: true, deliveryOutcome: "provider_failed" };
   }
-  return { accepted: true, deliveryAvailable: true };
 }
 
 export async function verifyEmailToken(rawToken: string, context: RequestContext = {}, now = new Date()): Promise<boolean> {
@@ -101,18 +103,18 @@ export async function requestPasswordReset(
   email: string,
   context: RequestContext = {},
   deps: TokenRequestDeps = {},
-): Promise<{ accepted: true; deliveryAvailable: boolean }> {
+): Promise<{ accepted: true; deliveryOutcome: AuthEmailDeliveryOutcome }> {
   const now = deps.now ?? new Date();
-  const delivery = deps.delivery === undefined ? getAuthEmailDelivery() : deps.delivery;
   const [user] = await getDatabase().select({ id: users.id, email: users.email, name: users.name, passwordHash: users.passwordHash })
     .from(users).where(eq(users.email, email)).limit(1);
   if (!user?.passwordHash) {
     await recordAuthSecurityEvent({ eventType: "password_reset_requested", outcome: "accepted", identifier: email, clientIp: context.clientIp });
-    return { accepted: true, deliveryAvailable: Boolean(delivery) };
+    return { accepted: true, deliveryOutcome: "ineligible" };
   }
+  const delivery = deps.delivery === undefined ? getConfiguredAuthEmailDelivery() : deps.delivery;
   if (!delivery) {
     await recordAuthSecurityEvent({ eventType: "password_reset_requested", outcome: "delivery_unavailable", userId: user.id, identifier: email, clientIp: context.clientIp });
-    return { accepted: true, deliveryAvailable: false };
+    return { accepted: true, deliveryOutcome: "provider_unavailable" };
   }
 
   const issued = await issueToken(user.id, "password_reset", now, RESET_TTL_MS, deps.tokenFactory ?? secureToken);
@@ -120,12 +122,13 @@ export async function requestPasswordReset(
   url.searchParams.set("token", issued.rawToken);
   try {
     await delivery.sendPasswordReset({ email: user.email, name: user.name, resetUrl: url.toString(), expiresAt: issued.expiresAt });
-    await recordAuthSecurityEvent({ eventType: "password_reset_requested", outcome: "delivered", userId: user.id, identifier: email, clientIp: context.clientIp });
+    await recordAuthSecurityEvent({ eventType: "password_reset_requested", outcome: "provider_accepted", userId: user.id, identifier: email, clientIp: context.clientIp });
+    return { accepted: true, deliveryOutcome: "provider_accepted" };
   } catch {
     await getDatabase().update(authActionTokens).set({ usedAt: now }).where(eq(authActionTokens.tokenHash, tokenHash(issued.rawToken)));
     await recordAuthSecurityEvent({ eventType: "password_reset_requested", outcome: "delivery_failed", userId: user.id, identifier: email, clientIp: context.clientIp });
+    return { accepted: true, deliveryOutcome: "provider_failed" };
   }
-  return { accepted: true, deliveryAvailable: true };
 }
 
 export async function resetPasswordWithToken(

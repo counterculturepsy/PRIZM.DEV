@@ -142,7 +142,7 @@ export async function changeAccountStatus(
       status,
       loginUrl: new URL("/login", deps.baseUrl ?? getServerEnv().NEXTAUTH_URL).toString(),
     });
-    await recordAuthSecurityEvent({ eventType: "account_status_notification", outcome: "delivered", userId: targetUserId, metadata: { status } });
+    await recordAuthSecurityEvent({ eventType: "account_status_notification", outcome: "provider_accepted", userId: targetUserId, metadata: { status } });
   } catch {
     await recordAuthSecurityEvent({ eventType: "account_status_notification", outcome: "delivery_failed", userId: targetUserId, metadata: { status: notificationTarget.status } });
   }

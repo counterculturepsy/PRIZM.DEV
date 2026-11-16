@@ -13,12 +13,10 @@ export function AuthEmailRequestForm({ endpoint, purpose }: { endpoint: string; 
     setMessage("");
     const email = new FormData(event.currentTarget).get("email");
     const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) });
-    const result = await response.json() as { message?: string; deliveryAvailable?: boolean };
+    const result = await response.json() as { message?: string };
     setPending(false);
     if (!response.ok) return setMessage(result.message ?? "The request could not be completed.");
-    setMessage(result.deliveryAvailable
-      ? `If the account is eligible, a ${purpose} link has been sent.`
-      : `The request was accepted, but external email delivery is not configured. No ${purpose} email was sent.`);
+    setMessage(`Request received. If an account matches this address, you may receive a ${purpose} email with further instructions. Please check your inbox and spam folder. If nothing arrives after 10 minutes, you can request another link.`);
   }
   return <form className="grid gap-4" onSubmit={(event) => void submit(event)}>
     <div className="grid gap-2"><Label htmlFor={`${purpose}-email`}>Email address</Label><Input autoComplete="email" id={`${purpose}-email`} name="email" required type="email" /></div>
