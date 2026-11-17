@@ -11,6 +11,7 @@ test-results/
 !.env.example
 # Local credentials and key material
 key.txt
+LOCAL-LOGIN-*.txt
 *.pem
 *.key
 *.log

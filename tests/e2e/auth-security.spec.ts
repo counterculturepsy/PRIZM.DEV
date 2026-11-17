@@ -2,14 +2,19 @@ import { createHash, createHmac, randomUUID } from "node:crypto";
 import pg from "pg";
 import { encode } from "next-auth/jwt";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { cleanupFixtureUsers, createdFixtureEmails, createdFixtureWorkspaceIds, e2ePassword, fixtureEmail, trackFixtureWorkspace } from "./support";
 
 const databaseUrl = process.env.E2E_DATABASE_URL;
 if (!databaseUrl) throw new Error("E2E_DATABASE_URL is required for authentication E2E tests.");
 const origin = "http://127.0.0.1:3100";
-const password = "PlaywrightPassword123";
+const password = e2ePassword();
 const authSecret = "e2e-only-secret-that-is-at-least-32-characters";
 
 test.describe.configure({ mode: "serial" });
+
+test.afterAll(async () => {
+  await withDatabase((client) => cleanupFixtureUsers(client, createdFixtureEmails(), createdFixtureWorkspaceIds()));
+});
 
 async function withDatabase<T>(run: (client: pg.Client) => Promise<T>): Promise<T> {
   const client = new pg.Client({ connectionString: databaseUrl });
@@ -48,7 +53,7 @@ function rateLimitHash(kind: "login" | "registration", identifier: string) {
 }
 
 async function createTransitionUser(input: { status?: "pending" | "approved" | "suspended"; oauth?: boolean; passwordHash?: string | null }) {
-  const email = `transition-${randomUUID()}@example.test`;
+  const email = fixtureEmail("transition");
   return withDatabase(async (client) => {
     const result = await client.query<{ id: string }>(
       "insert into users (name, email, email_verified, account_status, password_hash) values ('Transition User', $1, now(), $2, $3) returning id",
@@ -70,7 +75,7 @@ async function setTransitionSession(page: Page, user: { id: string; email: strin
 }
 
 test("registration accepts a new account without exposing whether an account already exists", async ({ request }) => {
-  const email = `register-${randomUUID()}@example.test`;
+  const email = fixtureEmail("register");
   const created = await register(request, email);
   expect(created.status()).toBe(202);
   await expect(created.json()).resolves.toEqual({ accepted: true });
@@ -83,14 +88,14 @@ test("registration accepts a new account without exposing whether an account alr
 
 test("registration rejects cross-origin mutations", async ({ request }) => {
   const response = await request.post("/api/auth/register", {
-    data: { name: "Cross Origin", email: `origin-${randomUUID()}@example.test`, password },
+    data: { name: "Cross Origin", email: fixtureEmail("origin"), password },
     headers: { origin: "https://attacker.example" },
   });
   expect(response.status()).toBe(403);
 });
 
 test("pending accounts cannot authenticate and email verification does not approve them", async ({ page, request }) => {
-  const email = `pending-${randomUUID()}@example.test`;
+  const email = fixtureEmail("pending");
   expect((await register(request, email)).status()).toBe(202);
   await signIn(page, email);
   await expect(authenticationError(page)).toContainText("incorrect");
@@ -100,8 +105,8 @@ test("pending accounts cannot authenticate and email verification does not appro
 });
 
 test("a platform administrator can approve an account and a normal user cannot open the approval queue", async ({ page, request }) => {
-  const adminEmail = `admin-${randomUUID()}@example.test`;
-  const memberEmail = `member-${randomUUID()}@example.test`;
+  const adminEmail = fixtureEmail("admin");
+  const memberEmail = fixtureEmail("member");
   expect((await register(request, adminEmail, "Platform Admin")).status()).toBe(202);
   expect((await register(request, memberEmail, "Pending Member")).status()).toBe(202);
   await approveAndVerify(adminEmail, true);
@@ -122,8 +127,8 @@ test("a platform administrator can approve an account and a normal user cannot o
 });
 
 test("rejected and suspended accounts are denied and an active session is invalidated", async ({ page, request }) => {
-  const rejectedEmail = `rejected-${randomUUID()}@example.test`;
-  const suspendedEmail = `suspended-${randomUUID()}@example.test`;
+  const rejectedEmail = fixtureEmail("rejected");
+  const suspendedEmail = fixtureEmail("suspended");
   expect((await register(request, rejectedEmail)).status()).toBe(202);
   expect((await register(request, suspendedEmail)).status()).toBe(202);
   await withDatabase((client) => client.query("update users set email_verified = now(), account_status = 'rejected' where email = $1", [rejectedEmail]));
@@ -185,7 +190,7 @@ test("OAuth-linked approved users can establish password access once and ineligi
 });
 
 test("registration returns 429 with Retry-After and recovers after the isolated bucket is cleared", async ({ request }) => {
-  const email = `limited-${randomUUID()}@example.test`;
+  const email = fixtureEmail("limited");
   for (let attempt = 0; attempt < 5; attempt += 1) expect((await register(request, email)).status()).toBe(202);
   const blocked = await register(request, email);
   expect(blocked.status()).toBe(429);
@@ -198,7 +203,7 @@ test("registration returns 429 with Retry-After and recovers after the isolated 
 });
 
 test("valid credentials authenticate and invalid credentials remain generic", async ({ page, request }) => {
-  const email = `login-${randomUUID()}@example.test`;
+  const email = fixtureEmail("login");
   expect((await register(request, email)).status()).toBe(202);
   await approveAndVerify(email);
   await signIn(page, email, "WrongPassword123");
@@ -208,7 +213,7 @@ test("valid credentials authenticate and invalid credentials remain generic", as
 });
 
 test("login blocks repeated failures and recovers after its window state is cleared", async ({ page, request }) => {
-  const email = `login-limit-${randomUUID()}@example.test`;
+  const email = fixtureEmail("login-limit");
   expect((await register(request, email)).status()).toBe(202);
   await approveAndVerify(email);
   for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -232,7 +237,7 @@ test("login blocks repeated failures and recovers after its window state is clea
 });
 
 test("email verification links are single use", async ({ page, request }) => {
-  const email = `verify-${randomUUID()}@example.test`;
+  const email = fixtureEmail("verify");
   expect((await register(request, email)).status()).toBe(202);
   const rawToken = Buffer.from(randomUUID().replaceAll("-", "").padEnd(32, "0")).toString("base64url").slice(0, 43).padEnd(43, "a");
   const hash = createHash("sha256").update(rawToken).digest("hex");
@@ -252,7 +257,7 @@ test("email verification links are single use", async ({ page, request }) => {
 });
 
 test("password reset is single use, changes credentials and invalidates session state", async ({ page, request }) => {
-  const email = `reset-${randomUUID()}@example.test`;
+  const email = fixtureEmail("reset");
   expect((await register(request, email)).status()).toBe(202);
   await approveAndVerify(email);
   const rawToken = Buffer.from(randomUUID().replaceAll("-", "").padEnd(32, "0")).toString("base64url").slice(0, 43).padEnd(43, "b");
@@ -280,7 +285,7 @@ test("password reset is single use, changes credentials and invalidates session 
 });
 
 test("password reset never bypasses pending approval", async ({ page, request }) => {
-  const email = `pending-reset-${randomUUID()}@example.test`;
+  const email = fixtureEmail("pending-reset");
   expect((await register(request, email)).status()).toBe(202);
   const rawToken = Buffer.from(randomUUID().replaceAll("-", "").padEnd(32, "0")).toString("base64url").slice(0, 43).padEnd(43, "c");
   const hash = createHash("sha256").update(rawToken).digest("hex");
@@ -299,13 +304,15 @@ test("password reset never bypasses pending approval", async ({ page, request })
 });
 
 test("an authenticated user cannot open another workspace company", async ({ page, request }) => {
-  const email = `tenant-${randomUUID()}@example.test`;
+  const email = fixtureEmail("tenant");
   expect((await register(request, email)).status()).toBe(202);
   await approveAndVerify(email);
   const betaCompanyId = await withDatabase(async (client) => {
     const user = await client.query<{ id: string }>("select id from users where email = $1", [email]);
     const alpha = await client.query<{ id: string }>("insert into workspaces (name, slug) values ($1, $2) returning id", ["Alpha E2E", `alpha-${randomUUID()}`]);
     const beta = await client.query<{ id: string }>("insert into workspaces (name, slug) values ($1, $2) returning id", ["Beta E2E", `beta-${randomUUID()}`]);
+    trackFixtureWorkspace(alpha.rows[0]!.id);
+    trackFixtureWorkspace(beta.rows[0]!.id);
     await client.query("insert into workspace_members (workspace_id, user_id, role, status, joined_at) values ($1, $2, 'owner', 'active', now())", [alpha.rows[0]?.id, user.rows[0]?.id]);
     const company = await client.query<{ id: string }>("insert into companies (workspace_id, name, dedupe_key) values ($1, 'Beta Secret', $2) returning id", [beta.rows[0]?.id, `beta-secret-${randomUUID()}`]);
     return company.rows[0]!.id;

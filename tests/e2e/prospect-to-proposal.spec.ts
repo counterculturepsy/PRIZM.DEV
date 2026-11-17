@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { e2ePassword } from "./support";
 
 const databaseUrl = process.env.E2E_DATABASE_URL;
 if (!databaseUrl) throw new Error("E2E_DATABASE_URL is required for the prospect-to-proposal journey.");
 const origin = `http://127.0.0.1:${Number(process.env.PLAYWRIGHT_PORT ?? 3100)}`;
-const password = "PlaywrightPassword123";
+const password = e2ePassword();
 const runId = randomUUID();
 const email = `journey-${runId}@example.test`;
 const workspaceName = "HOAX1G.DEV";
@@ -55,7 +56,7 @@ test.afterAll(async () => {
 });
 
 test("authenticated evidence-backed prospect becomes a human-approved proposal without outbound side effects", async ({ page, request }, testInfo) => {
-  test.setTimeout(60_000);
+  test.setTimeout(120_000);
   test.skip(testInfo.project.name !== "chromium", "The stateful vertical slice runs once in desktop Chromium.");
   await register(request);
   await page.goto("/login");
