@@ -60,6 +60,7 @@ export const crmActivityType = pgEnum("crm_activity_type", [
   "task_created",
   "task_completed",
   "contact_suppressed",
+  "lead_updated",
 ]);
 export const crmTaskStatus = pgEnum("crm_task_status", ["open", "completed", "cancelled"]);
 export const contactChannel = pgEnum("contact_channel", ["email", "phone"]);

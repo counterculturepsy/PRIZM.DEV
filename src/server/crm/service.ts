@@ -100,6 +100,8 @@ export async function changeDealStage(scope: WorkspaceScope, input: { leadId: st
     }).where(and(eq(deals.workspaceId, scope.workspaceId), eq(deals.leadId, lead.id), eq(deals.stage, current.stage)))
       .returning({ id: deals.id });
     if (!updated) return { changed: false } as const;
+    // The lead's updated_at is the concurrency token for lead edits, so a stage move must advance it too.
+    await tx.update(leads).set({ updatedAt: new Date() }).where(and(eq(leads.workspaceId, scope.workspaceId), eq(leads.id, lead.id)));
     await tx.insert(crmActivities).values({
       workspaceId: scope.workspaceId, leadId: lead.id, actorUserId: scope.userId,
       type: "stage_changed", summary: `Deal moved from ${current.stage} to ${input.stage}.`,
@@ -109,6 +111,69 @@ export async function changeDealStage(scope: WorkspaceScope, input: { leadId: st
       targetType: "lead", targetId: lead.id, metadata: { from: current.stage, to: input.stage },
     });
     return { changed: true } as const;
+  });
+}
+
+const MAX_VALUE_MINOR = 2_147_483_647;
+
+export type LeadDetailsInput = Readonly<{
+  leadId: string;
+  /** The lead's updated_at as the editor last saw it; a mismatch means someone else changed the lead. */
+  expectedUpdatedAt: Date;
+  title: string;
+  ownerUserId: string | null;
+  dealValueMinor: number | null;
+  currency: string;
+  expectedCloseAt: Date | null;
+}>;
+
+/** Edits the lead and its deal as one unit, rejecting stale edits instead of silently overwriting them. */
+export async function updateLeadDetails(scope: WorkspaceScope, input: LeadDetailsInput) {
+  const title = input.title.trim();
+  if (title.length < 2 || title.length > 160) throw new CrmMutationError("Use a lead title of 2 to 160 characters.");
+  if (!/^[A-Z]{3}$/.test(input.currency)) throw new CrmMutationError("Use a three-letter currency code.");
+  if (input.dealValueMinor !== null && (!Number.isInteger(input.dealValueMinor) || input.dealValueMinor < 0 || input.dealValueMinor > MAX_VALUE_MINOR)) {
+    throw new CrmMutationError("Enter a deal value between 0 and 21,474,836.47.");
+  }
+  return getDatabase().transaction(async (tx) => {
+    const [row] = await tx.select({
+      title: leads.title, ownerUserId: leads.ownerUserId, updatedAt: leads.updatedAt,
+      valueMinor: deals.valueMinor, currency: deals.currency, expectedCloseAt: deals.expectedCloseAt,
+    }).from(leads)
+      .innerJoin(deals, and(eq(deals.workspaceId, leads.workspaceId), eq(deals.leadId, leads.id)))
+      .where(and(eq(leads.workspaceId, scope.workspaceId), eq(leads.id, input.leadId))).limit(1).for("update");
+    if (!row) throw new CrmMutationError("Choose a lead in the active workspace.");
+    if (row.updatedAt.getTime() !== input.expectedUpdatedAt.getTime()) {
+      throw new CrmMutationError("This lead was changed by someone else. Refresh to see the latest details, then try again.");
+    }
+    if (input.ownerUserId) {
+      const [owner] = await tx.select({ userId: workspaceMembers.userId }).from(workspaceMembers).where(and(
+        eq(workspaceMembers.workspaceId, scope.workspaceId), eq(workspaceMembers.userId, input.ownerUserId), eq(workspaceMembers.status, "active"),
+      )).limit(1);
+      if (!owner) throw new CrmMutationError("Choose an active member of this workspace as the owner.");
+    }
+    const changed: string[] = [];
+    if (title !== row.title) changed.push("title");
+    if (input.ownerUserId !== row.ownerUserId) changed.push("owner");
+    if (input.dealValueMinor !== row.valueMinor) changed.push("deal value");
+    if (input.currency !== row.currency) changed.push("currency");
+    if ((input.expectedCloseAt?.getTime() ?? null) !== (row.expectedCloseAt?.getTime() ?? null)) changed.push("expected close date");
+    if (changed.length === 0) return { changed: false } as const;
+
+    const now = new Date();
+    await tx.update(leads).set({ title, ownerUserId: input.ownerUserId, updatedAt: now })
+      .where(and(eq(leads.workspaceId, scope.workspaceId), eq(leads.id, input.leadId)));
+    await tx.update(deals).set({ valueMinor: input.dealValueMinor, currency: input.currency, expectedCloseAt: input.expectedCloseAt, updatedAt: now })
+      .where(and(eq(deals.workspaceId, scope.workspaceId), eq(deals.leadId, input.leadId)));
+    await tx.insert(crmActivities).values({
+      workspaceId: scope.workspaceId, leadId: input.leadId, actorUserId: scope.userId,
+      type: "lead_updated", summary: `Lead details updated: ${changed.join(", ")}.`,
+    });
+    await tx.insert(auditLogs).values({
+      workspaceId: scope.workspaceId, actorUserId: scope.userId, action: "crm.lead_updated",
+      targetType: "lead", targetId: input.leadId, metadata: { fields: changed.join(", ") },
+    });
+    return { changed: true, fields: changed } as const;
   });
 }
 
