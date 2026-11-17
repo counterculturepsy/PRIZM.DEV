@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ApproveProposalForm, ReviseProposalForm } from "@/components/forms/proposal-forms";
+import { AttachedPacks } from "@/components/app/attached-packs";
 import { Card } from "@/components/ui/card";
 import { hasCapability } from "@/modules/workspaces/scope";
 import { getProposal } from "@/server/proposals/service";
@@ -43,6 +44,7 @@ export default async function ProposalPage({ params }: { params: Promise<{ propo
       <aside className="grid content-start gap-5">
         {proposal.status === "draft" && hasCapability(scope, "manage_workspace") ? <Card className="p-6"><h2 className="mb-4 font-semibold">Internal approval</h2><ApproveProposalForm proposalId={proposal.id} /></Card> : <Card className="p-6 text-sm text-muted-foreground">{proposal.approvalNote ? `Approval note: ${proposal.approvalNote}` : "Only an Owner or Admin can approve the current draft."}</Card>}
         {hasCapability(scope, "write") ? <Card className="p-6"><details><summary className="cursor-pointer font-semibold">Create a new version</summary><div className="mt-5"><ReviseProposalForm proposalId={proposal.id} snapshot={snapshot} /></div></details></Card> : null}
+        <AttachedPacks scope={scope} target={{ type: "proposal", id: proposal.id }} />
         <Card className="p-6"><h2 className="font-semibold">Lifecycle history</h2><ol className="mt-4 space-y-4">{proposal.history.map((event, index) => <li className="border-l border-border pl-4" key={`${event.action}-${event.createdAt.toISOString()}-${index}`}><p className="text-sm font-medium">{event.action.replace("proposal.", "Proposal ")}{event.version ? ` · version ${event.version}` : ""}</p><p className="mt-1 text-xs text-muted-foreground">{event.fromStatus ? `${event.fromStatus} → ` : ""}{event.toStatus ?? "recorded"} · {event.actor?.name ?? event.actor?.email ?? "System"} · {event.createdAt.toLocaleString("en-ZA")}</p>{event.note ? <p className="mt-2 text-xs">Approval note: {event.note}</p> : null}</li>)}</ol></Card>
         <Card className="p-6"><h2 className="font-semibold">Version history</h2><ol className="mt-4 space-y-2 text-sm text-muted-foreground">{proposal.versions.map((version) => <li key={version.id}>Version {version.version} · {version.createdBy.name ?? version.createdBy.email} · {version.createdAt.toLocaleString("en-ZA")}</li>)}</ol></Card>
       </aside>

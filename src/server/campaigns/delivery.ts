@@ -17,6 +17,7 @@ import {
   workspaceMembers,
   workspaces,
 } from "@/server/db/schema";
+import { campaignAttachmentsAreCurrent } from "@/server/kits/packs";
 import { campaignDetails } from "./service";
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -69,6 +70,8 @@ export async function materializeCampaignMessages(scope: WorkspaceScope, campaig
       return { created: 0, total: rows.length } as const;
     }
     if (result.campaign.status !== "reviewed" || result.issues.length) throw new CampaignDeliveryError("The campaign must pass current readiness checks and human review before staging.");
+    const attachments = await campaignAttachmentsAreCurrent(tx, scope.workspaceId, campaignId);
+    if (!attachments.ok) throw new CampaignDeliveryError("An attached capability pack changed after it was approved. Approve it again before staging delivery.");
 
     let created = 0;
     for (const step of result.steps) {
@@ -229,6 +232,11 @@ export async function processNextCampaignMessage(provider: CampaignEmailProvider
   if (!message) return null;
   if (!await isStillDeliverable(message, workerId)) {
     await suppressMessage(message, workerId, "suppressed_before_send", now);
+    return { messageId: message.id, status: "suppressed" } as const;
+  }
+  // The last check before anything leaves: an attached pack that changed after approval stops the send.
+  if (!(await campaignAttachmentsAreCurrent(getDatabase(), message.workspaceId, message.campaignId)).ok) {
+    await suppressMessage(message, workerId, "attachment_changed_after_approval", now);
     return { messageId: message.id, status: "suppressed" } as const;
   }
   try {

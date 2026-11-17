@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const PROMPT_VERSION = "sales-v1";
 export const draftPurposes = ["strategy", "outreach"] as const;
-export const generateDraftSchema = z.object({ leadId: z.uuid(), purpose: z.enum(draftPurposes), requestKey: z.uuid(), acknowledged: z.literal("on") });
+export const generateDraftSchema = z.object({ leadId: z.uuid(), purpose: z.enum(draftPurposes), requestKey: z.uuid(), acknowledged: z.literal("on"), packId: z.union([z.literal(""), z.uuid()]).optional().transform((value) => value || undefined) });
 export const policySchema = z.object({ enabled: z.boolean(), dailyRequestLimit: z.coerce.number().int().min(1).max(100) });
 export const reviewSchema = z.object({ draftId: z.uuid(), decision: z.enum(["approved", "rejected"]), note: z.string().trim().min(2).max(1000) });
 

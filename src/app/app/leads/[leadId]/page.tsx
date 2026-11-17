@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowLeft, CheckCircle2, Circle, ShieldAlert } from "lucide-react";
 import { notFound } from "next/navigation";
 import { CompleteTaskForm, ContactForm, DealStageForm, LeadDetailsForm, NoteForm, SuppressContactForm, TaskForm } from "@/components/forms/crm-forms";
+import { AttachedPacks } from "@/components/app/attached-packs";
 import { Card } from "@/components/ui/card";
 import { hasCapability } from "@/modules/workspaces/scope";
 import { getCrmLead, listActiveWorkspaceMembers } from "@/server/crm/queries";
@@ -28,6 +29,7 @@ export default async function LeadPage({ params }: { params: Promise<{ leadId: s
         {canWrite ? <Card className="p-6"><h2 className="text-lg font-semibold">Lead details</h2><p className="mt-2 text-sm text-muted-foreground">Owner, deal value, currency and expected close date. A save is rejected if someone else changed the lead first.</p><div className="mt-5"><LeadDetailsForm lead={lead} members={members} /></div></Card> : null}
         <Card className="p-6"><h2 className="text-lg font-semibold">Pipeline</h2><p className="mt-2 text-sm text-muted-foreground">Stage changes are recorded in the activity and security audit logs.</p>{canWrite ? <div className="mt-5"><DealStageForm currentStage={lead.stage} leadId={lead.id} /></div> : null}</Card>
         <Card className="p-6"><h2 className="text-lg font-semibold">Follow-ups</h2>{canWrite ? <div className="mt-5"><TaskForm leadId={lead.id} members={members} /></div> : null}<div className="mt-6 grid gap-3">{lead.tasks.map((task) => <article className="rounded-xl border border-border p-4" key={task.id}><div className="flex items-start gap-3">{task.status === "completed" ? <CheckCircle2 className="mt-0.5 size-4 text-success" /> : <Circle className="mt-0.5 size-4 text-muted-foreground" />}<div className="min-w-0"><h3 className="text-sm font-medium">{task.title}</h3>{task.description ? <p className="mt-1 text-xs leading-5 text-muted-foreground">{task.description}</p> : null}<p className="mt-2 text-xs text-muted-foreground">{task.dueAt ? `Due ${task.dueAt.toLocaleString("en-ZA")}` : "No due date"} · {task.status}</p></div></div>{canWrite && task.status === "open" ? <div className="mt-3"><CompleteTaskForm taskId={task.id} /></div> : null}</article>)}{lead.tasks.length === 0 ? <p className="text-sm text-muted-foreground">No follow-up tasks.</p> : null}</div></Card>
+        <AttachedPacks scope={scope} target={{ type: "lead", id: lead.id }} />
         <Card className="p-6"><h2 className="text-lg font-semibold">Activity</h2><div className="mt-5 grid gap-4">{lead.activities.map((activity) => <div className="border-l border-border pl-4" key={activity.id}><p className="text-sm">{activity.summary}</p><p className="mt-1 text-xs text-muted-foreground">{activity.actorName ?? activity.actorEmail} · {activity.occurredAt.toLocaleString("en-ZA")}</p></div>)}</div></Card>
       </aside>
     </div>
