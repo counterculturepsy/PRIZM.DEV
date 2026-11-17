@@ -1,29 +1,29 @@
 @import "tailwindcss";
 
 :root {
-  --background: #07040f;
-  --foreground: #f5f3ff;
-  --card: #100c1f;
-  --card-foreground: #f5f3ff;
-  --surface-elevated: #141025;
-  --surface-overlay: #1b1530;
-  --muted: #211a36;
-  --muted-foreground: #a6a0ba;
-  --border: #32284b;
-  --border-strong: #4f3d72;
-  --primary: #a020f0;
+  --background: #090a0e;
+  --foreground: #f4f4f7;
+  --card: #13141b;
+  --card-foreground: #f4f4f7;
+  --surface-elevated: #1a1b24;
+  --surface-overlay: #22232d;
+  --muted: #242530;
+  --muted-foreground: #b8bac9;
+  --border: #343540;
+  --border-strong: #515360;
+  --primary: #a855f7;
   --primary-foreground: #ffffff;
-  --cyan: #00d9ff;
-  --magenta: #d42bff;
+  --cyan: #22d3ee;
+  --magenta: #c084fc;
   --success: #34d399;
   --warning: #fbbf24;
   --error: #fb7185;
-  --ring: #00d9ff;
-  --focus-offset: #07040f;
-  --gradient-accent: linear-gradient(120deg, #a020f0 0%, #d42bff 42%, #00d9ff 100%);
-  --gradient-surface: linear-gradient(145deg, rgb(20 16 37 / 0.98), rgb(9 6 20 / 0.98));
-  --shadow-elevated: 0 24px 80px rgb(0 0 0 / 0.42), 0 0 0 1px rgb(160 32 240 / 0.06);
-  --shadow-neon-soft: 0 0 24px rgb(160 32 240 / 0.22), 0 0 36px rgb(0 217 255 / 0.08);
+  --ring: #22d3ee;
+  --focus-offset: #090a0e;
+  --gradient-accent: linear-gradient(120deg, #a855f7 0%, #c084fc 42%, #22d3ee 100%);
+  --gradient-surface: linear-gradient(145deg, #1a1b24, #13141b);
+  --shadow-elevated: 0 8px 28px rgb(0 0 0 / 0.16);
+  --shadow-neon-soft: 0 0 0 1px rgb(168 85 247 / 0.08);
   --shadow-focus: 0 0 0 3px rgb(0 217 255 / 0.26);
 }
 
@@ -54,10 +54,7 @@
 html { color-scheme: dark; background: var(--background); }
 body {
   min-height: 100vh;
-  background:
-    radial-gradient(circle at 12% -10%, rgb(160 32 240 / 0.14), transparent 34rem),
-    radial-gradient(circle at 100% 20%, rgb(0 217 255 / 0.07), transparent 30rem),
-    var(--background);
+  background: var(--background);
   color: var(--foreground);
   text-rendering: optimizeLegibility;
 }
@@ -143,3 +140,27 @@ a, button { -webkit-tap-highlight-color: transparent; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
 }
+
+/* Shared Quiet Chrome application surfaces. */
+.app-shell { background: var(--background); }
+.app-shell main { width: 100%; min-width: 0; padding-top: 28px; padding-bottom: 32px; }
+.app-shell h1 { font-size: clamp(1.65rem, 2.3vw, 2.15rem); letter-spacing: -.035em; line-height: 1.2; }
+.app-shell main > p:first-child { color: var(--muted-foreground); font-size: 10px; }
+.app-shell input, .app-shell select, .app-shell textarea { max-width: 100%; color-scheme: dark; }
+.app-shell table { width: 100%; font-size: .8125rem; text-align: left; }
+.app-shell th { font-weight: 500; color: var(--muted-foreground); }
+.app-shell th, .app-shell td { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.app-shell tr:last-child td { border-bottom: 0; }
+.app-shell a, .app-shell p, .app-shell h1, .app-shell h2, .app-shell h3 { overflow-wrap: anywhere; }
+.app-shell :focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; }
+.chrome-rule { width: 32px; height: 2px; background: var(--primary); margin-top: 20px; }
+.chrome-dialog { height: 100dvh; max-height: 100dvh; width: min(320px, 90vw); max-width: 90vw; margin: 0; background: #0d0e14; color: var(--foreground); border-right: 1px solid var(--border); padding: 22px; }
+.chrome-dialog::backdrop { background: rgb(0 0 0 / .65); backdrop-filter: blur(3px); }
+.pipeline-board { display: grid; grid-auto-columns: minmax(235px,1fr); grid-auto-flow: column; gap: 12px; overflow-x: auto; padding-bottom: 12px; }
+.pipeline-column { border: 1px solid #494052; border-radius: 12px; background: linear-gradient(180deg,#211a2b,#111218 280px); min-height: 340px; }
+.pipeline-column[data-stage=won] { border-color: #265662; background: linear-gradient(180deg,#152c32,#111218 280px); }
+.proposal-workbench { display: grid; grid-template-columns: 190px minmax(0,1fr) 300px; gap: 20px; align-items: start; }
+.proposal-paper { background: linear-gradient(145deg,#17141f,#0d0e14 65%); border: 1px solid #5d5c69; padding: 32px; box-shadow: 0 12px 30px #0005; }
+.proposal-paper section { scroll-margin-top: 90px; }
+@media(max-width:1279px) { .proposal-workbench { grid-template-columns: minmax(0,1fr) 280px; } .proposal-outline { grid-column: 1/-1; position: static; } .proposal-outline nav { display:flex; flex-wrap:wrap; } }
+@media(max-width:767px) { .app-shell main { padding: 22px 16px; } .proposal-workbench { grid-template-columns:minmax(0,1fr); } .proposal-paper { padding:20px; } .pipeline-board { display:flex; flex-direction:column; } .pipeline-column { min-height:0; } }

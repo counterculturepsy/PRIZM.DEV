@@ -51,8 +51,8 @@ export function LeadDetailsForm({ lead, members }: { lead: LeadDetailsFormLead; 
 export function DealStageForm({ leadId, currentStage }: { leadId: string; currentStage: string }) {
   const [state, action] = useActionState(changeDealStageAction, initialState);
   return <form action={action} className="grid gap-4"><input name="leadId" type="hidden" value={leadId} />
-    <div className="grid gap-2"><Label htmlFor="deal-stage">Pipeline stage</Label><select className={selectClassName} defaultValue={currentStage} id="deal-stage" name="stage">{dealStages.map((stage) => <option key={stage} value={stage}>{stage.replaceAll("_", " ")}</option>)}</select></div>
-    <div className="grid gap-2"><Label htmlFor="lost-reason">Loss reason <span className="text-muted-foreground">(required only for Lost)</span></Label><Input id="lost-reason" maxLength={500} name="lostReason" /></div>
+    <div className="grid gap-2"><Label htmlFor={"deal-stage-"+leadId}>Pipeline stage</Label><select className={selectClassName} defaultValue={currentStage} id={"deal-stage-"+leadId} name="stage">{dealStages.map((stage) => <option key={stage} value={stage}>{stage.replaceAll("_", " ")}</option>)}</select></div>
+    <div className="grid gap-2"><Label htmlFor={"lost-reason-"+leadId}>Loss reason <span className="text-muted-foreground">(required only for Lost)</span></Label><Input id={"lost-reason-"+leadId} maxLength={500} name="lostReason" /></div>
     <FormMessage state={state} /><SubmitButton pendingLabel="Updating…">Update stage</SubmitButton>
   </form>;
 }

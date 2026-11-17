@@ -2,7 +2,7 @@ import Image from "next/image";
 import { cn } from "@/lib/utils";
 
 export const HOAX1G_ARTWORK_PATH = "/branding/hoax1g-dev-geometric-artwork.png";
-export const HOAX1G_WORDMARK_PATH = "/branding/hoax1g-dev-wordmark.png";
+export const HOAX1G_WORDMARK_PATH = "/branding/hoax1g-studios-wordmark.png";
 
 export function Hoax1gWordmark({
   className,
@@ -13,13 +13,13 @@ export function Hoax1gWordmark({
 }) {
   return (
     <Image
-      alt="HOAX1G.DEV"
+      alt="HOAX1G.DEV STUDIOS"
       className={cn("h-auto w-full object-contain object-left", className)}
-      height={726}
+      height={682}
       priority={priority}
       quality={92}
       src={HOAX1G_WORDMARK_PATH}
-      width={2164}
+      width={2048}
     />
   );
 }
@@ -53,7 +53,7 @@ export function CreatorBrand({ className, showArtwork = true }: { className?: st
     <span className={cn("inline-flex items-center gap-3", className)}>
       {showArtwork ? (
         <span className="relative size-9 shrink-0 overflow-hidden rounded-lg border border-primary/35 bg-background shadow-[var(--shadow-neon-soft)]">
-          <Image alt="" aria-hidden="true" className="object-cover" fill sizes="36px" src={HOAX1G_ARTWORK_PATH} />
+          <Image alt="" aria-hidden="true" className="object-cover" fill sizes="36px" src="/branding/hoax1g-studios-emblem.png" />
         </span>
       ) : null}
       <span className="grid leading-none">

@@ -3,12 +3,12 @@ import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: { default: "PRIZM.DEV", template: "%s · PRIZM.DEV" },
+  title: { default: "HOAX1G.DEV STUDIOS", template: "%s · HOAX1G.DEV STUDIOS" },
   description: "Evidence-led prospect intelligence for developers and digital agencies.",
-  applicationName: "PRIZM.DEV",
+  applicationName: "HOAX1G.DEV STUDIOS",
   authors: [{ name: "HOAX1G.DEV" }],
   creator: "HOAX1G.DEV",
-  icons: { icon: [{ url: "/branding/hoax1g-dev-geometric-artwork.png", type: "image/png" }] },
+  icons: { icon: [{ url: "/branding/hoax1g-studios-emblem.png", type: "image/png" }] },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

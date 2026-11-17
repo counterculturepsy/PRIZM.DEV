@@ -14,7 +14,7 @@ export default async function RevenueReportPage() {
   const openDeals = report.value.open.reduce((total, group) => total + group.count, 0);
   const wonDeals = report.value.won.reduce((total, group) => total + group.count, 0);
   return <main className="mx-auto max-w-7xl px-5 py-10 sm:px-6 lg:px-8">
-    <ReportHeader title="Pipeline value, not recognized revenue" description="A privileged view of values recorded on open and won deals. PRIZM.DEV does not yet have the invoice, payment, refund, or tax ledger required for revenue accounting." asOf={report.asOf} timezone={report.workspace.timezone} version={report.version} showValueReport />
+    <ReportHeader title="Pipeline value, not recognized revenue" description="A privileged view of values recorded on open and won deals. HOAX1G.DEV STUDIOS does not yet have the invoice, payment, refund, or tax ledger required for revenue accounting." asOf={report.asOf} timezone={report.workspace.timezone} version={report.version} showValueReport />
     <div className="mt-8 grid gap-4 sm:grid-cols-3">
       <MetricCard label="Open deals" value={openDeals} detail="Current non-terminal deals across all stored currencies." />
       <MetricCard label="Won deals" value={wonDeals} detail="Current won deals; this is not proof of collection." />

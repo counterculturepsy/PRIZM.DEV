@@ -28,9 +28,9 @@ export default function HomePage() {
         <div className="max-w-4xl">
           <p className="mb-6 inline-flex rounded-full border border-primary/30 bg-primary/10 px-3 py-1 font-mono text-xs uppercase tracking-[0.18em] text-cyan">Client acquisition intelligence · South Africa first</p>
           <h1 className="text-balance text-5xl font-semibold leading-[1.02] tracking-[-0.045em] sm:text-6xl lg:text-7xl">Find your next client <span className="bg-gradient-to-r from-primary via-magenta to-cyan bg-clip-text text-transparent">before your competition does.</span></h1>
-          <p className="mt-8 max-w-2xl text-pretty text-lg leading-8 text-muted-foreground sm:text-xl">PRIZM.DEV is being built to discover businesses with real digital opportunities, explain the evidence, and help teams turn qualified prospects into clients.</p>
+          <p className="mt-8 max-w-2xl text-pretty text-lg leading-8 text-muted-foreground sm:text-xl">HOAX1G.DEV STUDIOS is being built to discover businesses with real digital opportunities, explain the evidence, and help teams turn qualified prospects into clients.</p>
           <div className="mt-10 flex flex-col gap-3 sm:flex-row">
-            <Link className={buttonVariants({ variant: "primary" })} href="/login">Enter PRIZM.DEV <ArrowRight aria-hidden="true" className="ml-2 size-4" /></Link>
+            <Link className={buttonVariants({ variant: "primary" })} href="/login">Enter HOAX1G.DEV STUDIOS <ArrowRight aria-hidden="true" className="ml-2 size-4" /></Link>
             <a className={buttonVariants({ variant: "ghost" })} href="#capabilities">Explore the architecture</a>
           </div>
         </div>
@@ -60,7 +60,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <footer className="border-t border-border px-6 py-8"><div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-5 text-center text-sm text-muted-foreground sm:flex-row sm:text-left"><p className="max-w-4xl">PRIZM.DEV client acquisition platform. Controlled discovery, audits, opportunity scoring, tenant-safe CRM, review-only AI drafts, versioned proposals, campaign safety, and workspace-scoped reporting are implemented; live providers, outbound automation, and recognized-revenue reporting remain disabled.</p><CreatorBrand className="shrink-0" /></div></footer>
+      <footer className="border-t border-border px-6 py-8"><div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-5 text-center text-sm text-muted-foreground sm:flex-row sm:text-left"><p className="max-w-4xl">HOAX1G.DEV STUDIOS client acquisition platform. Controlled discovery, audits, opportunity scoring, tenant-safe CRM, review-only AI drafts, versioned proposals, campaign safety, and workspace-scoped reporting are implemented; live providers, outbound automation, and recognized-revenue reporting remain disabled.</p><CreatorBrand className="shrink-0" /></div></footer>
     </main>
   );
 }

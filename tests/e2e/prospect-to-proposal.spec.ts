@@ -56,7 +56,7 @@ test.afterAll(async () => {
 });
 
 test("authenticated evidence-backed prospect becomes a human-approved proposal without outbound side effects", async ({ page, request }, testInfo) => {
-  test.setTimeout(120_000);
+  test.setTimeout(240_000);
   test.skip(testInfo.project.name !== "chromium", "The stateful vertical slice runs once in desktop Chromium.");
   await register(request);
   await page.goto("/login");
@@ -152,6 +152,7 @@ test("authenticated evidence-backed prospect becomes a human-approved proposal w
   await expect(page.getByText("Awaiting approval", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Import prospects" })).toHaveAttribute("href", "/app/discover/search");
   await expect(page.getByRole("link", { name: "View opportunities" })).toHaveAttribute("href", "/app/discover/opportunities");
+  await page.getByText("Workspace filters · Last 30 days", { exact: true }).click();
   await expect(page.getByLabel("Date range")).toHaveValue("30d");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ fullPage: true, path: testInfo.outputPath("dashboard-desktop.png") });
@@ -161,6 +162,25 @@ test("authenticated evidence-backed prospect becomes a human-approved proposal w
   await page.screenshot({ fullPage: true, path: testInfo.outputPath("dashboard-mobile.png") });
   await page.setViewportSize({ width: 1280, height: 720 });
 
+  const sizes = [[1440,900],[1280,800],[1024,768],[768,1024],[390,844]] as const;
+  for (const [screen, route] of [["overview","/app"],["pipeline","/app/crm/pipeline"],["research","/app/discover/opportunities"],["discover","/app/discover/search"],["proposal",proposalUrl],["kits","/app/kits"]] as const) {
+    await page.goto(route);
+    // The app streams a loading skeleton (main[aria-busy=true]); wait for real content so each capture shows the actual layout.
+    await page.waitForLoadState("networkidle");
+    await expect(page.locator('main[aria-busy="true"]')).toHaveCount(0);
+    for (const [width,height] of sizes) {
+      await page.setViewportSize({width,height});
+      await page.waitForTimeout(250);
+      expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth), screen+" overflow at "+width).toBe(true);
+      await page.screenshot({fullPage:true,path:testInfo.outputPath(screen+"-"+width+".png")});
+    }
+  }
+  await page.goto("/app/crm/pipeline");
+  await page.getByRole("button",{name:"Open navigation"}).click();
+  await expect(page.getByRole("dialog",{name:"Navigation and workspace"})).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).not.toBeVisible();
+  await page.setViewportSize({width:1440,height:900});
   await page.goto(proposalUrl);
   await page.getByLabel("Approval note").fill("Evidence, scope, and pricing reviewed by the workspace owner.");
   await page.getByRole("button", { name: "Approve current version" }).click();
@@ -180,4 +200,11 @@ test("authenticated evidence-backed prospect becomes a human-approved proposal w
     expect.objectContaining({ action: "proposal.approved", actor_user_id: userId }),
   ]);
   expect(stored.sideEffects).toEqual({ campaigns: 0, messages: 0 });
+  await page.getByText("Create a new version",{exact:true}).click();
+  await page.getByLabel("Executive summary",{exact:true}).fill("Updated scope after owner review of the captured evidence.");
+  await page.getByRole("button",{name:"Create new version",exact:true}).click();
+  await expect(page.getByRole("button",{name:"Approve current version",exact:true})).toBeVisible();
+  const revised = await withDatabase(client=>client.query("select status, current_version from proposals where workspace_id=$1",[workspaceId]));
+  expect(revised.rows[0]).toMatchObject({status:"draft",current_version:2});
+
 });

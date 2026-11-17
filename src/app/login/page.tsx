@@ -25,7 +25,7 @@ export default function LoginPage() {
         <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">Sign in to your workspace</h1>
         <p className="mt-3 text-sm leading-6 text-muted-foreground">Sign in to access your isolated workspace, opportunity intelligence, and CRM records.</p>
         <div className="mt-8"><LoginActions passwordEnabled={env.PASSWORD_AUTH_ENABLED} providers={providers} /></div>
-        {env.PASSWORD_AUTH_ENABLED ? <p className="mt-6 text-sm text-muted-foreground">New to PRIZM.DEV? <Link className="font-medium text-primary hover:underline" href="/signup">Create an account</Link>.</p> : null}
+        {env.PASSWORD_AUTH_ENABLED ? <p className="mt-6 text-sm text-muted-foreground">New to HOAX1G.DEV STUDIOS? <Link className="font-medium text-primary hover:underline" href="/signup">Create an account</Link>.</p> : null}
         <p className="mt-8 text-xs leading-5 text-muted-foreground">By continuing, you agree to use business data responsibly and review generated material before external use.</p>
     </AuthShell>
   );
