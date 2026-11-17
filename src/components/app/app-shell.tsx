@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BarChart3, Bot, Building2, FileText, KanbanSquare, LayoutDashboard, Lightbulb, ListChecks, MessageSquareText, ScanSearch, Search, Settings, ShieldCheck, Users } from "lucide-react";
+import { BarChart3, Bot, Briefcase, Building2, FileText, KanbanSquare, LayoutDashboard, Lightbulb, ListChecks, MessageSquareText, ScanSearch, Search, Settings, ShieldCheck, Users } from "lucide-react";
 import { CreatorBrand } from "@/components/brand/hoax1g-brand";
 import { Logo } from "@/components/brand/logo";
 import { selectWorkspaceAction } from "@/app/app/actions";
@@ -15,6 +15,7 @@ const activeLinks = [
   { section: "Sell", href: "/app/crm/pipeline", label: "Pipeline", icon: KanbanSquare },
   { section: "Sell", href: "/app/crm/tasks", label: "Tasks", icon: ListChecks },
   { section: "Sell", href: "/app/proposals", label: "Proposals", icon: FileText },
+  { section: "Sell", href: "/app/kits", label: "Capability kits", icon: Briefcase },
   { section: "Assist", href: "/app/ai/strategy", label: "AI strategy", icon: Bot },
   { section: "Assist", href: "/app/ai/outreach", label: "Outreach drafts", icon: MessageSquareText },
   { section: "Assist", href: "/app/campaigns", label: "Campaign preparation", icon: MessageSquareText },

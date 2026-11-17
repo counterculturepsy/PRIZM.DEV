@@ -16,7 +16,8 @@ export type AuthRateLimitKind =
   | "password_reset_ip"
   | "password_reset_complete"
   | "password_setup"
-  | "password_setup_ip";
+  | "password_setup_ip"
+  | "kit_share_ip";
 
 const policies = {
   login: { maximumAttempts: 10, windowMs: 15 * 60_000 },
@@ -31,6 +32,8 @@ const policies = {
   password_reset_complete: { maximumAttempts: 10, windowMs: 30 * 60_000 },
   password_setup: { maximumAttempts: 5, windowMs: 60 * 60_000 },
   password_setup_ip: { maximumAttempts: 20, windowMs: 60 * 60_000 },
+  // Public capability-pack share links: a recipient needs a handful of requests; a guesser needs millions.
+  kit_share_ip: { maximumAttempts: 30, windowMs: 10 * 60_000 },
 } as const satisfies Record<AuthRateLimitKind, { maximumAttempts: number; windowMs: number }>;
 
 export type AuthRateLimitDecision = Readonly<{

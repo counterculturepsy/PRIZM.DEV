@@ -127,6 +127,20 @@
       "when": 1794901109013,
       "tag": "0017_crm_lead_updated_activity",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794903399053,
+      "tag": "0018_capability_kits",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794906416722,
+      "tag": "0019_kit_share_rate_limit",
+      "breakpoints": true
     }
   ]
 }

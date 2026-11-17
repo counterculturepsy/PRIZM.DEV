@@ -11,6 +11,13 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // Document uploads travel through server actions: 4 MB PDF limit plus form overhead, still under Vercel's 4.5 MB request cap.
+  experimental: { serverActions: { bodySizeLimit: "4.4mb" } },
+  // The PDF routes read the bundled fonts from disk at runtime, so the file tracer must be told to ship them.
+  outputFileTracingIncludes: {
+    "/s/[token]": ["./assets/fonts/**"],
+    "/api/kits/packs/[packId]/pdf": ["./assets/fonts/**"],
+  },
   reactStrictMode: true,
   // Keep verification builds separate from the live development server's cache.
   distDir: process.env.NEXT_DIST_DIR || ".next",
