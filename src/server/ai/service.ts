@@ -4,6 +4,8 @@ import type { AIProvider } from "@/modules/ai/provider";
 import { PROMPT_VERSION, policySchema, redactEvidence, reviewSchema, salesDraftSchema, validateGrounding, type SalesEvidence } from "@/modules/ai/sales";
 import { getDatabase } from "@/server/db";
 import { aiDraftRuns, aiWorkspacePolicies, auditFindings, auditLogs, leads, leadScores, workspaceMembers, workspaces } from "@/server/db/schema";
+import { KitError } from "@/server/kits/common";
+import { buildPackCapabilityEvidence } from "@/server/kits/packs";
 import { configuredSalesProvider, SalesProviderError } from "./provider";
 
 export class SalesAssistantError extends Error {}
@@ -28,7 +30,7 @@ export async function saveAiPolicy(scope: WorkspaceScope, input: { enabled: bool
   });
 }
 
-export async function generateSalesDraft(scope: WorkspaceScope, input: { leadId: string; purpose: "strategy" | "outreach"; requestKey: string }, adapter?: { provider: AIProvider; model: string }) {
+export async function generateSalesDraft(scope: WorkspaceScope, input: { leadId: string; purpose: "strategy" | "outreach"; requestKey: string; packId?: string | undefined }, adapter?: { provider: AIProvider; model: string }) {
   await authorize(scope, "write");
   const db = getDatabase();
   const configured = adapter ?? configuredSalesProvider();
@@ -54,9 +56,14 @@ export async function generateSalesDraft(scope: WorkspaceScope, input: { leadId:
       .orderBy(desc(auditFindings.scoreImpact), auditFindings.id).limit(12);
     if (!rows.length) throw new SalesAssistantError("Complete an authorized website audit and materialize its evidence before drafting.");
     const evidence: SalesEvidence[] = rows.map((row) => ({ id: row.id, category: row.category, confidence: row.confidence, observedAt: row.observedAt.toISOString(), excerpt: redactEvidence(`${row.title}: ${row.evidence}`) }));
+    // Optional sender-side context: an approved, current capability pack becomes extra grounded evidence the draft may cite.
+    if (input.packId) {
+      try { evidence.push(...await buildPackCapabilityEvidence(tx, scope.workspaceId, input.packId)); }
+      catch (error) { if (error instanceof KitError) throw new SalesAssistantError(error.message); throw error; }
+    }
     const [run] = await tx.insert(aiDraftRuns).values({ workspaceId: scope.workspaceId, leadId: lead.id, actorUserId: scope.userId, requestKey: input.requestKey, purpose: input.purpose, provider: configured.provider.id, model: configured.model, promptVersion: PROMPT_VERSION, evidence }).returning({ id: aiDraftRuns.id });
     if (!run) throw new SalesAssistantError("The draft request could not be reserved.");
-    await tx.insert(auditLogs).values({ workspaceId: scope.workspaceId, actorUserId: scope.userId, action: "ai.draft_requested", targetType: "ai_draft", targetId: run.id, metadata: { purpose: input.purpose } });
+    await tx.insert(auditLogs).values({ workspaceId: scope.workspaceId, actorUserId: scope.userId, action: "ai.draft_requested", targetType: "ai_draft", targetId: run.id, metadata: { purpose: input.purpose, capabilityPack: Boolean(input.packId) } });
     return { id: run.id, evidence, created: true };
   });
   if (!reserved.created) return reserved.id;
@@ -64,7 +71,10 @@ export async function generateSalesDraft(scope: WorkspaceScope, input: { leadId:
   try {
     const result = await configured.provider.generateStructured({
       workspaceId: scope.workspaceId, requestId: reserved.id, purpose: input.purpose,
-      input: { subject: "the prospective business", budget: { maximumOutputTokens: 2000 } },
+      input: {
+        subject: "the prospective business", budget: { maximumOutputTokens: 2000 },
+        ...(input.packId ? { senderCapabilities: "Evidence with category capability or capability_document describes the sender's own approved projects and documents. Mention them only where relevant, never claim results beyond what the excerpt states, and never imply that a document was sent." } : {}),
+      },
       evidence: reserved.evidence.map((item) => ({ source: item.id, observedAt: item.observedAt, excerpt: JSON.stringify(item) })),
     }, salesDraftSchema);
     const output = validateGrounding(result.output, reserved.evidence);

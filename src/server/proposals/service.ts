@@ -148,7 +148,10 @@ export async function approveProposal(scope: WorkspaceScope, input: unknown) {
   });
 }
 
-export async function listProposals(scope: WorkspaceScope) {
+export const proposalListStatuses = ["draft", "approved", "declined", "expired", "superseded"] as const;
+export type ProposalListStatus = (typeof proposalListStatuses)[number];
+
+export async function listProposals(scope: WorkspaceScope, options: Readonly<{ status?: ProposalListStatus }> = {}) {
   const db = getDatabase();
   return db.transaction(async (tx) => {
     await tx.execute(sql`select id from workspaces where id = ${scope.workspaceId} for update`);
@@ -156,7 +159,8 @@ export async function listProposals(scope: WorkspaceScope) {
     return tx.select({ id: proposals.id, title: proposals.title, status: proposals.status, currentVersion: proposals.currentVersion, updatedAt: proposals.updatedAt, companyName: companies.name })
       .from(proposals).innerJoin(leads, and(eq(leads.workspaceId, proposals.workspaceId), eq(leads.id, proposals.leadId)))
       .innerJoin(companies, and(eq(companies.workspaceId, leads.workspaceId), eq(companies.id, leads.companyId)))
-      .where(eq(proposals.workspaceId, scope.workspaceId)).orderBy(desc(proposals.updatedAt)).limit(100);
+      .where(options.status ? and(eq(proposals.workspaceId, scope.workspaceId), eq(proposals.status, options.status)) : eq(proposals.workspaceId, scope.workspaceId))
+      .orderBy(desc(proposals.updatedAt)).limit(100);
   });
 }
 

@@ -99,4 +99,77 @@ describe("CRM service", () => {
     })).rejects.toThrow();
     await client.close();
   });
+
+  it("edits lead details with optimistic concurrency, owner validation, activity and tenant isolation", async () => {
+    const client = new PGlite();
+    const db = drizzle(client);
+    await migrate(db, { migrationsFolder: "drizzle" });
+    const [owner, outsider, rep] = await db.insert(users).values([
+      { email: "owner@example.com", name: "Owner" }, { email: "outsider@example.com", name: "Outsider" }, { email: "rep@example.com", name: "Rep" },
+    ]).returning({ id: users.id });
+    const [alpha, beta] = await db.insert(workspaces).values([
+      { name: "Alpha", slug: "edit-alpha", currency: "ZAR" }, { name: "Beta", slug: "edit-beta", currency: "ZAR" },
+    ]).returning({ id: workspaces.id });
+    if (!owner || !outsider || !rep || !alpha || !beta) throw new Error("fixtures were not created");
+    await db.insert(workspaceMembers).values([
+      { workspaceId: alpha.id, userId: owner.id, role: "sales", status: "active", joinedAt: new Date() },
+      { workspaceId: alpha.id, userId: rep.id, role: "sales", status: "active", joinedAt: new Date() },
+      { workspaceId: beta.id, userId: outsider.id, role: "sales", status: "active", joinedAt: new Date() },
+    ]);
+    const [company] = await db.insert(companies).values({ workspaceId: alpha.id, name: "Edit Studio", dedupeKey: "domain:edit-studio.example" }).returning({ id: companies.id });
+    if (!company) throw new Error("company fixture was not created");
+
+    vi.resetModules();
+    vi.doMock("@/server/db", () => ({ getDatabase: () => db }));
+    const service = await import("./service");
+    const alphaScope = createWorkspaceScope({ workspaceId: alpha.id, userId: owner.id, role: "sales" });
+    const betaScope = createWorkspaceScope({ workspaceId: beta.id, userId: outsider.id, role: "sales" });
+    const { leadId } = await service.createCrmLead(alphaScope, { companyId: company.id, title: "Brand platform" });
+    const token = async () => (await db.select({ updatedAt: leads.updatedAt }).from(leads).where(eq(leads.id, leadId)))[0]!.updatedAt;
+    const base = { leadId, title: "Brand platform", ownerUserId: owner.id as string | null, dealValueMinor: null as number | null, currency: "ZAR", expectedCloseAt: null as Date | null };
+
+    // A save that changes nothing is a no-op: no write, no activity.
+    await expect(service.updateLeadDetails(alphaScope, { ...base, expectedUpdatedAt: await token() })).resolves.toEqual({ changed: false });
+    expect(await db.select().from(crmActivities).where(and(eq(crmActivities.leadId, leadId), eq(crmActivities.type, "lead_updated")))).toHaveLength(0);
+
+    const first = await token();
+    const close = new Date("2026-12-31T00:00:00.000Z");
+    const saved = await service.updateLeadDetails(alphaScope, { ...base, expectedUpdatedAt: first, title: "Brand platform phase 1", ownerUserId: rep.id, dealValueMinor: 1_250_000, expectedCloseAt: close });
+    expect(saved).toEqual({ changed: true, fields: ["title", "owner", "deal value", "expected close date"] });
+    const [deal] = await db.select().from(deals).where(eq(deals.leadId, leadId));
+    expect(deal).toMatchObject({ valueMinor: 1_250_000, currency: "ZAR" });
+    expect(deal?.expectedCloseAt?.toISOString()).toBe(close.toISOString());
+    const [lead] = await db.select().from(leads).where(eq(leads.id, leadId));
+    expect(lead).toMatchObject({ title: "Brand platform phase 1", ownerUserId: rep.id });
+
+    // The first editor's token is now stale, so a second save based on it is rejected and changes nothing.
+    await expect(service.updateLeadDetails(alphaScope, { ...base, expectedUpdatedAt: first, title: "Stale overwrite" })).rejects.toThrow(/changed by someone else/);
+    expect((await db.select().from(leads).where(eq(leads.id, leadId)))[0]?.title).toBe("Brand platform phase 1");
+
+    // A stage change also advances the token.
+    const beforeStage = await token();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await service.changeDealStage(alphaScope, { leadId, stage: "discovery" });
+    expect((await token()).getTime()).toBeGreaterThan(beforeStage.getTime());
+    await expect(service.updateLeadDetails(alphaScope, { ...base, expectedUpdatedAt: beforeStage, title: "After stage" })).rejects.toThrow(/changed by someone else/);
+
+    const current = await token();
+    await expect(service.updateLeadDetails(alphaScope, { ...base, expectedUpdatedAt: current, ownerUserId: outsider.id })).rejects.toBeInstanceOf(service.CrmMutationError);
+    await expect(service.updateLeadDetails(alphaScope, { ...base, expectedUpdatedAt: current, dealValueMinor: -1 })).rejects.toBeInstanceOf(service.CrmMutationError);
+    await expect(service.updateLeadDetails(alphaScope, { ...base, expectedUpdatedAt: current, dealValueMinor: 2_147_483_648 })).rejects.toBeInstanceOf(service.CrmMutationError);
+    await expect(service.updateLeadDetails(alphaScope, { ...base, expectedUpdatedAt: current, currency: "zar" })).rejects.toBeInstanceOf(service.CrmMutationError);
+    await expect(service.updateLeadDetails(alphaScope, { ...base, expectedUpdatedAt: current, title: " x " })).rejects.toBeInstanceOf(service.CrmMutationError);
+    await expect(service.updateLeadDetails(betaScope, { ...base, expectedUpdatedAt: current, title: "Cross tenant edit" })).rejects.toThrow(/active workspace/);
+
+    await service.updateLeadDetails(alphaScope, { ...base, expectedUpdatedAt: current, title: "Brand platform phase 1", ownerUserId: null, dealValueMinor: 1_250_000, currency: "USD", expectedCloseAt: close });
+    expect((await db.select().from(deals).where(eq(deals.leadId, leadId)))[0]).toMatchObject({ currency: "USD", valueMinor: 1_250_000 });
+    expect((await db.select().from(leads).where(eq(leads.id, leadId)))[0]?.ownerUserId).toBeNull();
+
+    const activities = await db.select().from(crmActivities).where(and(eq(crmActivities.leadId, leadId), eq(crmActivities.type, "lead_updated")));
+    expect(activities).toHaveLength(2);
+    const audits = await db.select().from(auditLogs).where(and(eq(auditLogs.targetId, leadId), eq(auditLogs.action, "crm.lead_updated")));
+    expect(audits).toHaveLength(2);
+    expect(JSON.stringify(audits.map((row) => row.metadata))).not.toMatch(/Cross tenant|Stale overwrite/);
+    await client.close();
+  });
 });

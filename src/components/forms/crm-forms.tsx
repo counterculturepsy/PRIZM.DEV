@@ -10,6 +10,7 @@ import {
   completeCrmTaskAction,
   createCrmLeadAction,
   suppressCrmContactAction,
+  updateLeadDetailsAction,
 } from "@/app/app/crm/actions";
 import { dealStages } from "@/modules/crm/validation";
 import { FormMessage, SubmitButton } from "@/components/forms/form-parts";
@@ -32,11 +33,26 @@ export function CreateLeadFromOpportunityForm({ companyId, opportunityId, title 
   return <form action={action} className="grid gap-2"><input name="companyId" type="hidden" value={companyId} /><input name="sourceOpportunityId" type="hidden" value={opportunityId} /><input name="title" type="hidden" value={title} /><SubmitButton pendingLabel="Creating lead…">Create CRM lead</SubmitButton><FormMessage state={state} /></form>;
 }
 
+type LeadDetailsFormLead = Readonly<{
+  id: string; title: string; ownerUserId: string | null; valueMinor: number | null; currency: string; expectedCloseAt: Date | null; updatedAt: Date;
+}>;
+
+export function LeadDetailsForm({ lead, members }: { lead: LeadDetailsFormLead; members: readonly { userId: string; name: string | null; email: string }[] }) {
+  const [state, action] = useActionState(updateLeadDetailsAction, initialState);
+  return <form action={action} className="grid gap-4"><input name="leadId" type="hidden" value={lead.id} /><input name="expectedUpdatedAt" type="hidden" value={lead.updatedAt.toISOString()} />
+    <div className="grid gap-2"><Label htmlFor="lead-edit-title">Lead title</Label><Input defaultValue={lead.title} id="lead-edit-title" maxLength={160} minLength={2} name="title" required /></div>
+    <div className="grid gap-2"><Label htmlFor="lead-edit-owner">Owner</Label><select className={selectClassName} defaultValue={lead.ownerUserId ?? ""} id="lead-edit-owner" name="ownerUserId"><option value="">Unassigned</option>{members.map((member) => <option key={member.userId} value={member.userId}>{member.name ?? member.email}</option>)}</select></div>
+    <div className="grid gap-4 sm:grid-cols-2"><div className="grid gap-2"><Label htmlFor="lead-edit-value">Deal value</Label><Input defaultValue={lead.valueMinor === null ? "" : (lead.valueMinor / 100).toFixed(2)} id="lead-edit-value" inputMode="decimal" maxLength={24} name="dealValue" placeholder="Not valued" /></div><div className="grid gap-2"><Label htmlFor="lead-edit-currency">Currency</Label><Input defaultValue={lead.currency} id="lead-edit-currency" maxLength={3} minLength={3} name="currency" pattern="[A-Za-z]{3}" required /></div></div>
+    <div className="grid gap-2"><Label htmlFor="lead-edit-close">Expected close date <span className="text-muted-foreground">(optional)</span></Label><Input defaultValue={lead.expectedCloseAt ? lead.expectedCloseAt.toISOString().slice(0, 10) : ""} id="lead-edit-close" name="expectedCloseDate" type="date" /></div>
+    <FormMessage state={state} /><SubmitButton pendingLabel="Saving…">Save lead details</SubmitButton>
+  </form>;
+}
+
 export function DealStageForm({ leadId, currentStage }: { leadId: string; currentStage: string }) {
   const [state, action] = useActionState(changeDealStageAction, initialState);
   return <form action={action} className="grid gap-4"><input name="leadId" type="hidden" value={leadId} />
-    <div className="grid gap-2"><Label htmlFor="deal-stage">Pipeline stage</Label><select className={selectClassName} defaultValue={currentStage} id="deal-stage" name="stage">{dealStages.map((stage) => <option key={stage} value={stage}>{stage.replaceAll("_", " ")}</option>)}</select></div>
-    <div className="grid gap-2"><Label htmlFor="lost-reason">Loss reason <span className="text-muted-foreground">(required only for Lost)</span></Label><Input id="lost-reason" maxLength={500} name="lostReason" /></div>
+    <div className="grid gap-2"><Label htmlFor={"deal-stage-"+leadId}>Pipeline stage</Label><select className={selectClassName} defaultValue={currentStage} id={"deal-stage-"+leadId} name="stage">{dealStages.map((stage) => <option key={stage} value={stage}>{stage.replaceAll("_", " ")}</option>)}</select></div>
+    <div className="grid gap-2"><Label htmlFor={"lost-reason-"+leadId}>Loss reason <span className="text-muted-foreground">(required only for Lost)</span></Label><Input id={"lost-reason-"+leadId} maxLength={500} name="lostReason" /></div>
     <FormMessage state={state} /><SubmitButton pendingLabel="Updating…">Update stage</SubmitButton>
   </form>;
 }

@@ -70,6 +70,20 @@ describe("proposal service", () => {
     await client.close();
   });
 
+  it("filters the proposal list by status so dashboard drill-downs select the right records", async () => {
+    const { client, db, user, alpha, lead } = await fixture();
+    vi.resetModules(); vi.doMock("@/server/db", () => ({ getDatabase: () => db })); const service = await import("./service");
+    const owner = createWorkspaceScope({ workspaceId: alpha.id, userId: user.id, role: "owner" });
+    const id = await service.createProposal(owner, input(lead.id));
+    expect(await service.listProposals(owner, { status: "approved" })).toEqual([]);
+    expect((await service.listProposals(owner, { status: "draft" })).map((row) => row.id)).toEqual([id]);
+    await service.approveProposal(owner, { proposalId: id, note: "Scope and price reviewed" });
+    expect((await service.listProposals(owner, { status: "approved" })).map((row) => row.id)).toEqual([id]);
+    expect(await service.listProposals(owner, { status: "draft" })).toEqual([]);
+    expect((await service.listProposals(owner)).map((row) => row.id)).toEqual([id]);
+    await client.close();
+  });
+
   it("revalidates active workspace membership for reads and mutations", async () => {
     const { client, db, user, alpha, lead } = await fixture();
     vi.resetModules(); vi.doMock("@/server/db", () => ({ getDatabase: () => db })); const service = await import("./service");

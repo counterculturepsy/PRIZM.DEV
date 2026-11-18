@@ -1,11 +1,13 @@
 import { sql } from "drizzle-orm";
 import type { SalesDraft, SalesEvidence } from "@/modules/ai/sales";
+import type { KitContent } from "@/modules/kits/content";
 import type { ProposalSnapshot } from "@/modules/proposals/validation";
 import {
   bigint,
   bigserial,
   boolean,
   check,
+  customType,
   doublePrecision,
   foreignKey,
   index,
@@ -29,6 +31,7 @@ export const workspaceRole = pgEnum("workspace_role", [
   "developer",
   "viewer",
 ]);
+export const accountStatus = pgEnum("account_status", ["pending", "approved", "rejected", "suspended"]);
 export const workspaceStatus = pgEnum("workspace_status", ["active", "suspended", "deleting"]);
 export const membershipStatus = pgEnum("membership_status", ["invited", "active", "suspended"]);
 export const invitationStatus = pgEnum("invitation_status", ["pending", "accepted", "revoked", "expired"]);
@@ -59,6 +62,7 @@ export const crmActivityType = pgEnum("crm_activity_type", [
   "task_created",
   "task_completed",
   "contact_suppressed",
+  "lead_updated",
 ]);
 export const crmTaskStatus = pgEnum("crm_task_status", ["open", "completed", "cancelled"]);
 export const contactChannel = pgEnum("contact_channel", ["email", "phone"]);
@@ -74,6 +78,8 @@ export const users = pgTable(
     passwordHash: text("password_hash"),
     authVersion: integer("auth_version").default(0).notNull(),
     passwordChangedAt: timestamp("password_changed_at", { withTimezone: true }),
+    accountStatus: accountStatus("account_status").default("pending").notNull(),
+    isPlatformAdmin: boolean("is_platform_admin").default(false).notNull(),
     jobTitle: text("job_title"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -280,7 +286,7 @@ export const authRateLimitWindows = pgTable(
   (table) => [
     primaryKey({ columns: [table.kind, table.identifierHash, table.windowStartedAt] }),
     index("auth_rate_limit_windows_updated_idx").on(table.updatedAt),
-    check("auth_rate_limit_windows_kind_check", sql`${table.kind} in ('login', 'login_ip', 'registration', 'registration_ip', 'verification', 'verification_ip', 'verification_complete', 'password_reset', 'password_reset_ip', 'password_reset_complete')`),
+    check("auth_rate_limit_windows_kind_check", sql`${table.kind} in ('login', 'login_ip', 'registration', 'registration_ip', 'verification', 'verification_ip', 'verification_complete', 'password_reset', 'password_reset_ip', 'password_reset_complete', 'password_setup', 'password_setup_ip', 'kit_share_ip')`),
     check("auth_rate_limit_windows_hash_check", sql`char_length(${table.identifierHash}) = 64`),
     check("auth_rate_limit_windows_attempts_check", sql`${table.attempts} >= 1`),
   ],
@@ -323,6 +329,43 @@ export const authSecurityEvents = pgTable(
     index("auth_security_events_type_created_idx").on(table.eventType, table.createdAt),
     check("auth_security_events_identifier_hash_check", sql`${table.identifierHash} is null or char_length(${table.identifierHash}) = 64`),
     check("auth_security_events_ip_hash_check", sql`${table.ipHash} is null or char_length(${table.ipHash}) = 64`),
+  ],
+);
+
+export const accountApprovalAudits = pgTable(
+  "account_approval_audits",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    actorUserId: uuid("actor_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+    targetUserId: uuid("target_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+    action: text("action").notNull(),
+    previousStatus: accountStatus("previous_status").notNull(),
+    nextStatus: accountStatus("next_status").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("account_approval_audits_target_created_idx").on(table.targetUserId, table.createdAt),
+    index("account_approval_audits_actor_created_idx").on(table.actorUserId, table.createdAt),
+    check("account_approval_audits_action_check", sql`${table.action} in ('approve', 'reject', 'suspend', 'reactivate')`),
+  ],
+);
+
+export const accountNotificationEvents = pgTable(
+  "account_notification_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    targetUserId: uuid("target_user_id").references(() => users.id, { onDelete: "cascade" }),
+    actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+    eventType: text("event_type").notNull(),
+    audience: text("audience").notNull(),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("account_notification_events_target_created_idx").on(table.targetUserId, table.createdAt),
+    index("account_notification_events_audience_read_idx").on(table.audience, table.readAt, table.createdAt),
+    check("account_notification_events_type_check", sql`${table.eventType} in ('registration_pending', 'account_approved', 'account_rejected', 'account_suspended', 'account_reactivated')`),
+    check("account_notification_events_audience_check", sql`${table.audience} in ('platform_admin', 'user')`),
   ],
 );
 
@@ -1247,6 +1290,255 @@ export const osmLocalities = osmSource.table(
   ],
 );
 
+/** Private file bytes live in the database: tenant-scoped, transactional, backed up, and never behind a public URL. */
+const bytea = customType<{ data: Buffer; driverData: Uint8Array }>({
+  dataType() { return "bytea"; },
+  toDriver(value) { return value; },
+  fromDriver(value) { return Buffer.from(value); },
+});
+
+export const kitAssets = pgTable("kit_assets", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  kind: text("kind").notNull(),
+  status: text("status").default("active").notNull(),
+  currentVersion: integer("current_version").default(1).notNull(),
+  createdByUserId: uuid("created_by_user_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+}, (t) => [
+  unique("kit_assets_workspace_id_unique").on(t.workspaceId, t.id),
+  index("kit_assets_workspace_status_idx").on(t.workspaceId, t.status, t.updatedAt),
+  check("kit_assets_title_check", sql`char_length(${t.title}) between 1 and 160`),
+  check("kit_assets_kind_check", sql`${t.kind} in ('pdf', 'image')`),
+  check("kit_assets_status_check", sql`(${t.status} = 'active' and ${t.archivedAt} is null) or (${t.status} = 'archived' and ${t.archivedAt} is not null)`),
+  check("kit_assets_version_check", sql`${t.currentVersion} >= 1`),
+  foreignKey({ columns: [t.workspaceId, t.createdByUserId], foreignColumns: [workspaceMembers.workspaceId, workspaceMembers.userId], name: "kit_assets_creator_fk" }).onDelete("restrict"),
+]);
+
+export const kitAssetVersions = pgTable("kit_asset_versions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  assetId: uuid("asset_id").notNull(),
+  version: integer("version").notNull(),
+  filename: text("filename").notNull(),
+  contentType: text("content_type").notNull(),
+  byteSize: integer("byte_size").notNull(),
+  sha256: text("sha256").notNull(),
+  pageCount: integer("page_count"),
+  width: integer("width"),
+  height: integer("height"),
+  data: bytea("data").notNull(),
+  uploadedByUserId: uuid("uploaded_by_user_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  // A constraint (not an index) because kit_pack_assets references it and drizzle emits indexes after foreign keys.
+  unique("kit_asset_versions_unique").on(t.workspaceId, t.assetId, t.version),
+  check("kit_asset_versions_version_check", sql`${t.version} >= 1`),
+  check("kit_asset_versions_type_check", sql`${t.contentType} in ('application/pdf', 'image/png', 'image/jpeg')`),
+  check("kit_asset_versions_size_check", sql`${t.byteSize} between 1 and 4000000 and octet_length(${t.data}) = ${t.byteSize}`),
+  check("kit_asset_versions_sha_check", sql`char_length(${t.sha256}) = 64`),
+  check("kit_asset_versions_filename_check", sql`char_length(${t.filename}) between 1 and 120`),
+  foreignKey({ columns: [t.workspaceId, t.assetId], foreignColumns: [kitAssets.workspaceId, kitAssets.id], name: "kit_asset_versions_asset_fk" }).onDelete("cascade"),
+  foreignKey({ columns: [t.workspaceId, t.uploadedByUserId], foreignColumns: [workspaceMembers.workspaceId, workspaceMembers.userId], name: "kit_asset_versions_uploader_fk" }).onDelete("restrict"),
+]);
+
+export const capabilityKits = pgTable("capability_kits", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  status: text("status").default("active").notNull(),
+  currentVersion: integer("current_version").default(1).notNull(),
+  createdByUserId: uuid("created_by_user_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+}, (t) => [
+  unique("capability_kits_workspace_id_unique").on(t.workspaceId, t.id),
+  index("capability_kits_workspace_status_idx").on(t.workspaceId, t.status, t.updatedAt),
+  check("capability_kits_name_check", sql`char_length(${t.name}) between 2 and 120`),
+  check("capability_kits_status_check", sql`(${t.status} = 'active' and ${t.archivedAt} is null) or (${t.status} = 'archived' and ${t.archivedAt} is not null)`),
+  check("capability_kits_version_check", sql`${t.currentVersion} >= 1`),
+  foreignKey({ columns: [t.workspaceId, t.createdByUserId], foreignColumns: [workspaceMembers.workspaceId, workspaceMembers.userId], name: "capability_kits_creator_fk" }).onDelete("restrict"),
+]);
+
+export const capabilityKitVersions = pgTable("capability_kit_versions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  kitId: uuid("kit_id").notNull(),
+  version: integer("version").notNull(),
+  content: jsonb("content").$type<KitContent>().notNull(),
+  changeNote: text("change_note"),
+  createdByUserId: uuid("created_by_user_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  unique("capability_kit_versions_unique").on(t.workspaceId, t.kitId, t.version),
+  check("capability_kit_versions_version_check", sql`${t.version} >= 1`),
+  check("capability_kit_versions_note_check", sql`${t.changeNote} is null or char_length(${t.changeNote}) <= 300`),
+  foreignKey({ columns: [t.workspaceId, t.kitId], foreignColumns: [capabilityKits.workspaceId, capabilityKits.id], name: "capability_kit_versions_kit_fk" }).onDelete("cascade"),
+  foreignKey({ columns: [t.workspaceId, t.createdByUserId], foreignColumns: [workspaceMembers.workspaceId, workspaceMembers.userId], name: "capability_kit_versions_creator_fk" }).onDelete("restrict"),
+]);
+
+export const caseStudies = pgTable("case_studies", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  projectName: text("project_name").notNull(),
+  problem: text("problem").default("").notNull(),
+  solution: text("solution").default("").notNull(),
+  techStack: jsonb("tech_stack").$type<string[]>().default(sql`'[]'::jsonb`).notNull(),
+  responsibilities: text("responsibilities").default("").notNull(),
+  architectureSummary: text("architecture_summary").default("").notNull(),
+  repositoryUrl: text("repository_url"),
+  demoUrl: text("demo_url"),
+  results: text("results"),
+  resultsVerified: boolean("results_verified").default(false).notNull(),
+  developmentStatus: text("development_status").notNull(),
+  status: text("status").default("active").notNull(),
+  createdByUserId: uuid("created_by_user_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+}, (t) => [
+  unique("case_studies_workspace_id_unique").on(t.workspaceId, t.id),
+  index("case_studies_workspace_status_idx").on(t.workspaceId, t.status, t.updatedAt),
+  check("case_studies_name_check", sql`char_length(${t.projectName}) between 2 and 160`),
+  check("case_studies_development_status_check", sql`${t.developmentStatus} in ('concept', 'in_development', 'prototype', 'live', 'retired')`),
+  check("case_studies_status_check", sql`(${t.status} = 'active' and ${t.archivedAt} is null) or (${t.status} = 'archived' and ${t.archivedAt} is not null)`),
+  check("case_studies_urls_check", sql`(${t.repositoryUrl} is null or ${t.repositoryUrl} like 'https://%') and (${t.demoUrl} is null or ${t.demoUrl} like 'https://%')`),
+  foreignKey({ columns: [t.workspaceId, t.createdByUserId], foreignColumns: [workspaceMembers.workspaceId, workspaceMembers.userId], name: "case_studies_creator_fk" }).onDelete("restrict"),
+]);
+
+export const caseStudyAssets = pgTable("case_study_assets", {
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  caseStudyId: uuid("case_study_id").notNull(),
+  assetId: uuid("asset_id").notNull(),
+  position: integer("position").default(0).notNull(),
+  caption: text("caption"),
+}, (t) => [
+  primaryKey({ columns: [t.workspaceId, t.caseStudyId, t.assetId], name: "case_study_assets_pk" }),
+  check("case_study_assets_caption_check", sql`${t.caption} is null or char_length(${t.caption}) <= 200`),
+  foreignKey({ columns: [t.workspaceId, t.caseStudyId], foreignColumns: [caseStudies.workspaceId, caseStudies.id], name: "case_study_assets_case_study_fk" }).onDelete("cascade"),
+  foreignKey({ columns: [t.workspaceId, t.assetId], foreignColumns: [kitAssets.workspaceId, kitAssets.id], name: "case_study_assets_asset_fk" }).onDelete("restrict"),
+]);
+
+export const kitPacks = pgTable("kit_packs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  kitId: uuid("kit_id").notNull(),
+  kitVersion: integer("kit_version").notNull(),
+  templateKey: text("template_key").notNull(),
+  title: text("title").notNull(),
+  recipientName: text("recipient_name").notNull(),
+  recipientOrganisation: text("recipient_organisation"),
+  message: text("message").default("").notNull(),
+  leadId: uuid("lead_id"),
+  status: text("status").default("draft").notNull(),
+  approvedByUserId: uuid("approved_by_user_id"),
+  approvedAt: timestamp("approved_at", { withTimezone: true }),
+  approvedDigest: text("approved_digest"),
+  createdByUserId: uuid("created_by_user_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  unique("kit_packs_workspace_id_unique").on(t.workspaceId, t.id),
+  index("kit_packs_workspace_status_idx").on(t.workspaceId, t.status, t.updatedAt),
+  check("kit_packs_template_check", sql`${t.templateKey} in ('senior_developer_application', 'saas_architect_application', 'full_stack_engineer_application', 'software_development_proposal', 'ecommerce_development_proposal', 'ai_automation_proposal', 'partnership_introduction')`),
+  check("kit_packs_text_check", sql`char_length(${t.title}) between 2 and 160 and char_length(${t.recipientName}) between 2 and 120 and char_length(${t.message}) <= 5000`),
+  check("kit_packs_status_check", sql`(${t.status} = 'draft' and ${t.approvedAt} is null and ${t.approvedByUserId} is null and ${t.approvedDigest} is null) or (${t.status} = 'approved' and ${t.approvedAt} is not null and ${t.approvedByUserId} is not null and char_length(${t.approvedDigest}) = 64)`),
+  foreignKey({ columns: [t.workspaceId, t.kitId, t.kitVersion], foreignColumns: [capabilityKitVersions.workspaceId, capabilityKitVersions.kitId, capabilityKitVersions.version], name: "kit_packs_kit_version_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [t.workspaceId, t.leadId], foreignColumns: [leads.workspaceId, leads.id], name: "kit_packs_lead_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [t.workspaceId, t.createdByUserId], foreignColumns: [workspaceMembers.workspaceId, workspaceMembers.userId], name: "kit_packs_creator_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [t.workspaceId, t.approvedByUserId], foreignColumns: [workspaceMembers.workspaceId, workspaceMembers.userId], name: "kit_packs_approver_fk" }).onDelete("restrict"),
+]);
+
+export const kitPackCaseStudies = pgTable("kit_pack_case_studies", {
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  packId: uuid("pack_id").notNull(),
+  caseStudyId: uuid("case_study_id").notNull(),
+  position: integer("position").default(0).notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.workspaceId, t.packId, t.caseStudyId], name: "kit_pack_case_studies_pk" }),
+  foreignKey({ columns: [t.workspaceId, t.packId], foreignColumns: [kitPacks.workspaceId, kitPacks.id], name: "kit_pack_case_studies_pack_fk" }).onDelete("cascade"),
+  foreignKey({ columns: [t.workspaceId, t.caseStudyId], foreignColumns: [caseStudies.workspaceId, caseStudies.id], name: "kit_pack_case_studies_case_study_fk" }).onDelete("restrict"),
+]);
+
+export const kitPackAssets = pgTable("kit_pack_assets", {
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  packId: uuid("pack_id").notNull(),
+  assetId: uuid("asset_id").notNull(),
+  assetVersion: integer("asset_version").notNull(),
+  position: integer("position").default(0).notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.workspaceId, t.packId, t.assetId], name: "kit_pack_assets_pk" }),
+  foreignKey({ columns: [t.workspaceId, t.packId], foreignColumns: [kitPacks.workspaceId, kitPacks.id], name: "kit_pack_assets_pack_fk" }).onDelete("cascade"),
+  foreignKey({ columns: [t.workspaceId, t.assetId, t.assetVersion], foreignColumns: [kitAssetVersions.workspaceId, kitAssetVersions.assetId, kitAssetVersions.version], name: "kit_pack_assets_version_fk" }).onDelete("restrict"),
+]);
+
+export const kitAttachments = pgTable("kit_attachments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  packId: uuid("pack_id").notNull(),
+  targetType: text("target_type").notNull(),
+  proposalId: uuid("proposal_id"),
+  leadId: uuid("lead_id"),
+  campaignId: uuid("campaign_id"),
+  attachedByUserId: uuid("attached_by_user_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("kit_attachments_pack_target_unique").on(t.workspaceId, t.packId, t.targetType, sql`coalesce(${t.proposalId}, ${t.leadId}, ${t.campaignId})`),
+  index("kit_attachments_workspace_pack_idx").on(t.workspaceId, t.packId),
+  check("kit_attachments_target_check", sql`(${t.targetType} = 'proposal' and ${t.proposalId} is not null and ${t.leadId} is null and ${t.campaignId} is null) or (${t.targetType} = 'lead' and ${t.leadId} is not null and ${t.proposalId} is null and ${t.campaignId} is null) or (${t.targetType} = 'campaign' and ${t.campaignId} is not null and ${t.proposalId} is null and ${t.leadId} is null)`),
+  foreignKey({ columns: [t.workspaceId, t.packId], foreignColumns: [kitPacks.workspaceId, kitPacks.id], name: "kit_attachments_pack_fk" }).onDelete("cascade"),
+  foreignKey({ columns: [t.workspaceId, t.proposalId], foreignColumns: [proposals.workspaceId, proposals.id], name: "kit_attachments_proposal_fk" }).onDelete("cascade"),
+  foreignKey({ columns: [t.workspaceId, t.leadId], foreignColumns: [leads.workspaceId, leads.id], name: "kit_attachments_lead_fk" }).onDelete("cascade"),
+  foreignKey({ columns: [t.workspaceId, t.campaignId], foreignColumns: [campaigns.workspaceId, campaigns.id], name: "kit_attachments_campaign_fk" }).onDelete("cascade"),
+  foreignKey({ columns: [t.workspaceId, t.attachedByUserId], foreignColumns: [workspaceMembers.workspaceId, workspaceMembers.userId], name: "kit_attachments_attacher_fk" }).onDelete("restrict"),
+]);
+
+export const kitShareLinks = pgTable("kit_share_links", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  packId: uuid("pack_id").notNull(),
+  tokenHash: text("token_hash").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  revokedByUserId: uuid("revoked_by_user_id"),
+  maxDownloads: integer("max_downloads"),
+  downloadCount: integer("download_count").default(0).notNull(),
+  createdByUserId: uuid("created_by_user_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  unique("kit_share_links_workspace_id_unique").on(t.workspaceId, t.id),
+  uniqueIndex("kit_share_links_token_hash_unique").on(t.tokenHash),
+  index("kit_share_links_workspace_pack_idx").on(t.workspaceId, t.packId, t.createdAt),
+  check("kit_share_links_hash_check", sql`char_length(${t.tokenHash}) = 64`),
+  check("kit_share_links_limits_check", sql`${t.downloadCount} >= 0 and (${t.maxDownloads} is null or ${t.maxDownloads} between 1 and 100) and ${t.expiresAt} > ${t.createdAt}`),
+  check("kit_share_links_revocation_check", sql`(${t.revokedAt} is null) = (${t.revokedByUserId} is null)`),
+  foreignKey({ columns: [t.workspaceId, t.packId], foreignColumns: [kitPacks.workspaceId, kitPacks.id], name: "kit_share_links_pack_fk" }).onDelete("cascade"),
+  foreignKey({ columns: [t.workspaceId, t.createdByUserId], foreignColumns: [workspaceMembers.workspaceId, workspaceMembers.userId], name: "kit_share_links_creator_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [t.workspaceId, t.revokedByUserId], foreignColumns: [workspaceMembers.workspaceId, workspaceMembers.userId], name: "kit_share_links_revoker_fk" }).onDelete("restrict"),
+]);
+
+export const kitAccessEvents = pgTable("kit_access_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  linkId: uuid("link_id"),
+  packId: uuid("pack_id"),
+  assetId: uuid("asset_id"),
+  eventType: text("event_type").notNull(),
+  actorUserId: uuid("actor_user_id"),
+  ipHash: text("ip_hash"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index("kit_access_events_workspace_created_idx").on(t.workspaceId, t.createdAt),
+  index("kit_access_events_link_idx").on(t.workspaceId, t.linkId, t.createdAt),
+  check("kit_access_events_type_check", sql`${t.eventType} in ('link_download', 'link_denied_expired', 'link_denied_revoked', 'link_denied_limit', 'pack_download', 'asset_download')`),
+  check("kit_access_events_ip_check", sql`${t.ipHash} is null or char_length(${t.ipHash}) = 64`),
+  foreignKey({ columns: [t.workspaceId, t.linkId], foreignColumns: [kitShareLinks.workspaceId, kitShareLinks.id], name: "kit_access_events_link_fk" }).onDelete("cascade"),
+]);
+
 export const schema = {
   users,
   accounts,
@@ -1296,4 +1588,16 @@ export const schema = {
   osmDatasets,
   osmPlaces,
   osmLocalities,
+  kitAssets,
+  kitAssetVersions,
+  capabilityKits,
+  capabilityKitVersions,
+  caseStudies,
+  caseStudyAssets,
+  kitPacks,
+  kitPackCaseStudies,
+  kitPackAssets,
+  kitAttachments,
+  kitShareLinks,
+  kitAccessEvents,
 };

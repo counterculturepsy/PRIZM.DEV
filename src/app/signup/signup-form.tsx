@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/form-controls";
 
 export function SignupForm() {
+  const router = useRouter();
   const [message, setMessage] = useState("");
   const [pending, setPending] = useState(false);
 
@@ -19,7 +21,7 @@ export function SignupForm() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(credentials),
     });
-    const result = await response.json() as { message?: string; deliveryAvailable?: boolean };
+    const result = await response.json() as { message?: string };
     if (!response.ok) {
       setPending(false);
       setMessage(result.message ?? "Account creation failed. Please try again.");
@@ -27,9 +29,7 @@ export function SignupForm() {
     }
 
     setPending(false);
-    setMessage(result.deliveryAvailable
-      ? "Check your email for a verification link before signing in."
-      : "Your account request was accepted. Verification email delivery is not configured yet; contact the operator for controlled verification.");
+    router.push("/signup/pending");
   }
 
   return (

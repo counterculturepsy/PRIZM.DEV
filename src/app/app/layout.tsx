@@ -11,5 +11,5 @@ export default async function ApplicationLayout({ children }: Readonly<{ childre
   const cookieStore = await cookies();
   const selectedId = cookieStore.get(ACTIVE_WORKSPACE_COOKIE)?.value;
   const activeId = memberships.some((workspace) => workspace.id === selectedId) ? selectedId : memberships[0]?.id;
-  return <AppShell activeId={activeId} memberships={memberships} userName={session.user.name ?? session.user.email ?? "Member"}>{children}</AppShell>;
+  return <AppShell activeId={activeId} isPlatformAdmin={session.user.isPlatformAdmin} memberships={memberships} userName={session.user.name ?? session.user.email ?? "Member"}>{children}</AppShell>;
 }

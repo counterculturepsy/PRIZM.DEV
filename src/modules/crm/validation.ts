@@ -22,6 +22,40 @@ export const updateDealStageSchema = z.object({
   }
 });
 
+/** Parses a major-unit amount ("12500", "12 500,50") to integer minor units without floating-point rounding. */
+export function parseMoneyMinor(value: string): number | null | undefined {
+  const cleaned = value.replace(/\s/g, "").replace(",", ".");
+  if (cleaned === "") return null;
+  const match = /^(\d{1,7})(?:\.(\d{1,2}))?$/.exec(cleaned);
+  if (!match) return undefined;
+  return Number(match[1]) * 100 + Number((match[2] ?? "").padEnd(2, "0"));
+}
+
+export const updateLeadDetailsSchema = z.object({
+  leadId: z.uuid(),
+  expectedUpdatedAt: z.iso.datetime(),
+  title: z.string().trim().min(2).max(160),
+  ownerUserId: optionalUuid.optional(),
+  dealValue: z.string().max(24),
+  currency: z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/, "Use a three-letter currency code."),
+  expectedCloseDate: z.union([z.literal(""), z.iso.date()]),
+}).transform((value, context) => {
+  const dealValueMinor = parseMoneyMinor(value.dealValue);
+  if (dealValueMinor === undefined) {
+    context.addIssue({ code: "custom", path: ["dealValue"], message: "Enter an amount such as 12500 or 12500.50 (up to 7 digits before the decimal)." });
+    return z.NEVER;
+  }
+  return {
+    leadId: value.leadId,
+    expectedUpdatedAt: new Date(value.expectedUpdatedAt),
+    title: value.title,
+    ownerUserId: value.ownerUserId ?? null,
+    dealValueMinor,
+    currency: value.currency,
+    expectedCloseAt: value.expectedCloseDate ? new Date(`${value.expectedCloseDate}T00:00:00.000Z`) : null,
+  };
+});
+
 export const createContactSchema = z.object({
   leadId: z.uuid(),
   firstName: z.string().trim().min(1).max(80),

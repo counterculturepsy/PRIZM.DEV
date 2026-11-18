@@ -11,6 +11,7 @@ import {
   createTaskSchema,
   suppressContactSchema,
   updateDealStageSchema,
+  updateLeadDetailsSchema,
 } from "@/modules/crm/validation";
 import {
   addCrmContact,
@@ -21,6 +22,7 @@ import {
   createCrmLead,
   CrmMutationError,
   suppressCrmContact,
+  updateLeadDetails,
 } from "@/server/crm/service";
 import { getWorkspaceContext } from "@/server/workspaces/context";
 
@@ -65,6 +67,24 @@ export async function changeDealStageAction(_state: FormState, formData: FormDat
     const result = await changeDealStage(scope, parsed.data);
     revalidateCrm(parsed.data.leadId);
     return { status: "success", message: result.changed ? "Pipeline stage updated." : "The deal is already in this stage." };
+  } catch (error) {
+    if (error instanceof CrmMutationError) return invalid(error.message);
+    throw error;
+  }
+}
+
+export async function updateLeadDetailsAction(_state: FormState, formData: FormData): Promise<FormState> {
+  const parsed = updateLeadDetailsSchema.safeParse({
+    leadId: text(formData, "leadId"), expectedUpdatedAt: text(formData, "expectedUpdatedAt"), title: text(formData, "title"),
+    ownerUserId: text(formData, "ownerUserId"), dealValue: text(formData, "dealValue"), currency: text(formData, "currency"),
+    expectedCloseDate: text(formData, "expectedCloseDate"),
+  });
+  if (!parsed.success) return invalid(parsed.error.issues[0]?.message ?? "Check the lead details.");
+  const { scope } = await getWorkspaceContext("write");
+  try {
+    const result = await updateLeadDetails(scope, parsed.data);
+    revalidateCrm(parsed.data.leadId);
+    return { status: "success", message: result.changed ? "Lead details saved." : "No changes to save." };
   } catch (error) {
     if (error instanceof CrmMutationError) return invalid(error.message);
     throw error;

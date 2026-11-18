@@ -15,6 +15,12 @@ const optionalBoolean = z.preprocess(
   z.boolean().optional(),
 );
 
+const emailIdentity = z.string().refine((value) => {
+  const match = value.trim().match(/^(?:[^<>]+\s*<([^<>]+)>|([^<>\s]+))$/);
+  const address = match?.[1] ?? match?.[2];
+  return Boolean(address && z.email().safeParse(address.trim()).success);
+}, "AUTH_EMAIL_FROM must be an email address or a display name followed by an email address in angle brackets");
+
 export const serverEnvSchema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -29,6 +35,25 @@ export const serverEnvSchema = z
     AUTH_GOOGLE_ID: optionalString,
     AUTH_GOOGLE_SECRET: optionalSecret,
     PASSWORD_AUTH_ENABLED: optionalBoolean.default(false),
+    OAUTH_LOGIN_ENABLED: optionalBoolean.default(true),
+    AUTH_EMAIL_PROVIDER: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.enum(["resend", "brevo"]).optional(),
+    ),
+    RESEND_API_KEY: optionalSecret,
+    BREVO_API_KEY: optionalSecret,
+    AUTH_EMAIL_FROM: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      emailIdentity.optional(),
+    ),
+    AUTH_EMAIL_REPLY_TO: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.email().optional(),
+    ),
+    ADMIN_NOTIFICATION_EMAIL: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.email().optional(),
+    ),
     DEV_AUTH_BYPASS: optionalBoolean.default(false),
     INTEGRATION_ENCRYPTION_KEY: optionalSecret,
     OPENAI_API_KEY: optionalSecret,
@@ -84,6 +109,24 @@ export const serverEnvSchema = z
           message: `${idKey} and ${secretKey} must be configured together`,
         });
       }
+    }
+
+    const provider = value.AUTH_EMAIL_PROVIDER ?? "resend";
+    const emailConfiguration = [
+      value.AUTH_EMAIL_PROVIDER,
+      value.RESEND_API_KEY,
+      value.BREVO_API_KEY,
+      value.AUTH_EMAIL_FROM,
+      value.AUTH_EMAIL_REPLY_TO,
+      value.ADMIN_NOTIFICATION_EMAIL,
+    ];
+    const selectedProviderKey = provider === "brevo" ? value.BREVO_API_KEY : value.RESEND_API_KEY;
+    if (emailConfiguration.some(Boolean) && (!selectedProviderKey || !value.AUTH_EMAIL_FROM || !value.ADMIN_NOTIFICATION_EMAIL)) {
+      context.addIssue({
+        code: "custom",
+        path: [provider === "brevo" ? "BREVO_API_KEY" : "RESEND_API_KEY"],
+        message: `The selected ${provider} email provider key, AUTH_EMAIL_FROM and ADMIN_NOTIFICATION_EMAIL must be configured together`,
+      });
     }
   });
 

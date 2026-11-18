@@ -1,0 +1,1 @@
+ALTER TYPE "public"."crm_activity_type" ADD VALUE 'lead_updated';

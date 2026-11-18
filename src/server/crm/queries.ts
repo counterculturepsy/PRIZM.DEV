@@ -55,6 +55,8 @@ export async function getCrmLead(scope: WorkspaceScope, leadId: string) {
     industry: companies.industry,
     city: companies.city,
     sourceOpportunityId: leads.sourceOpportunityId,
+    ownerUserId: leads.ownerUserId,
+    updatedAt: leads.updatedAt,
     sourceAuditId: opportunities.auditId,
     stage: deals.stage,
     valueMinor: deals.valueMinor,
