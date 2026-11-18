@@ -26,7 +26,7 @@ export type PackTemplate = Readonly<{
 export const packTemplates: Readonly<Record<PackTemplateKey, PackTemplate>> = {
   senior_developer_application: {
     key: "senior_developer_application", label: "Senior Developer Application", category: "application",
-    purposeHint: "the Senior Developer role", selectionGuidance: "Choose 2 to 4 projects that show ownership of design, delivery and maintenance.",
+    purposeHint: "the Senior Developer role", selectionGuidance: "Choose 1 to 4 projects that show ownership of design, delivery and maintenance.",
     minCaseStudies: 1, maxCaseStudies: 4,
   },
   saas_architect_application: {

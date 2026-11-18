@@ -6,7 +6,7 @@ import {
   approvePackAction, attachPackAction, createCaseStudyAction, createKitAction, createPackAction, createShareLinkAction, detachPackAction,
   purgeArchivedAssetsAction, revokeShareLinkAction, saveKitAction, setAssetStatusAction, setCaseStudyStatusAction, setKitStatusAction, updateCaseStudyAction, updatePackAction, uploadKitAssetAction,
 } from "@/app/app/kits/actions";
-import { FormMessage, SubmitButton } from "@/components/forms/form-parts";
+import { FormMessage, RestoringForm, SubmitButton } from "@/components/forms/form-parts";
 import { Input, Label, selectClassName, Textarea } from "@/components/ui/form-controls";
 import { developmentStatusLabels, developmentStatuses, type KitContent } from "@/modules/kits/content";
 import { packTemplates, packTemplateKeys } from "@/modules/kits/templates";
@@ -59,7 +59,7 @@ type KitFormProps = Readonly<{
 export function KitForm({ kit, content, caseStudies, assets }: KitFormProps) {
   const [state, action] = useActionState(kit ? saveKitAction : createKitAction, idle);
   const capabilities = (content?.capabilities ?? []).map((group) => `${group.group}: ${group.items.join(", ")}`).join("\n");
-  return <form action={action} className="grid gap-5">
+  return <RestoringForm action={action} className="grid gap-5" state={state}>
     {kit ? <Hidden values={{ kitId: kit.id, expectedVersion: String(kit.currentVersion) }} /> : null}
     <div className="grid gap-4 sm:grid-cols-2">
       <div className="grid gap-2"><Label htmlFor="kit-name">Kit name</Label><Input defaultValue={kit?.name ?? ""} id="kit-name" maxLength={120} minLength={2} name="name" required /></div>
@@ -87,7 +87,7 @@ export function KitForm({ kit, content, caseStudies, assets }: KitFormProps) {
     </fieldset>
     {kit ? <div className="grid gap-2"><Label htmlFor="kit-note">What changed <span className="text-muted-foreground">(optional)</span></Label><Input id="kit-note" maxLength={300} name="changeNote" /></div> : null}
     <FormMessage state={state} /><SubmitButton pendingLabel="Saving…">{kit ? "Save as new version" : "Create kit"}</SubmitButton>
-  </form>;
+  </RestoringForm>;
 }
 
 export const KitStatusForm = ({ kitId, status }: { kitId: string; status: "archived" | "active" }) =>
@@ -102,7 +102,7 @@ type CaseStudyDefaults = Readonly<{
 
 export function CaseStudyForm({ study, images, selectedImageIds }: { study?: CaseStudyDefaults; images?: readonly Option[]; selectedImageIds?: readonly string[] }) {
   const [state, action] = useActionState(study ? updateCaseStudyAction : createCaseStudyAction, idle);
-  return <form action={action} className="grid gap-4">
+  return <RestoringForm action={action} className="grid gap-4" state={state}>
     {study ? <input name="caseStudyId" type="hidden" value={study.id} /> : null}
     <div className="grid gap-4 sm:grid-cols-2">
       <div className="grid gap-2"><Label htmlFor="cs-name">Project name</Label><Input defaultValue={study?.projectName ?? ""} id="cs-name" maxLength={160} minLength={2} name="projectName" required /></div>
@@ -121,7 +121,7 @@ export function CaseStudyForm({ study, images, selectedImageIds }: { study?: Cas
     <label className="flex items-start gap-2 text-sm"><input className="mt-1" defaultChecked={study?.resultsVerified ?? false} name="resultsVerified" type="checkbox" /><span>I have verified these results. Unverified results are never shown in a kit or PDF.</span></label>
     {study && images ? <CheckList legend="Screenshots" name="screenshotAssetIds" options={images} selected={selectedImageIds} /> : null}
     <FormMessage state={state} /><SubmitButton pendingLabel="Saving…">{study ? "Save case study" : "Add case study"}</SubmitButton>
-  </form>;
+  </RestoringForm>;
 }
 
 export const CaseStudyStatusForm = ({ caseStudyId, status }: { caseStudyId: string; status: "archived" | "active" }) =>
@@ -131,7 +131,7 @@ export const CaseStudyStatusForm = ({ caseStudyId, status }: { caseStudyId: stri
 
 export function CreatePackForm({ kits, caseStudies, assets, leads }: { kits: readonly Option[]; caseStudies: readonly Option[]; assets: readonly Option[]; leads: readonly Option[] }) {
   const [state, action] = useActionState(createPackAction, idle);
-  return <form action={action} className="grid gap-4">
+  return <RestoringForm action={action} className="grid gap-4" state={state}>
     <div className="grid gap-4 sm:grid-cols-2">
       <div className="grid gap-2"><Label htmlFor="pack-kit">Kit</Label><select className={selectClassName} id="pack-kit" name="kitId" required><option value="">Select a kit</option>{kits.map((kit) => <option key={kit.id} value={kit.id}>{kit.label}</option>)}</select></div>
       <div className="grid gap-2"><Label htmlFor="pack-template">Template</Label><select className={selectClassName} id="pack-template" name="templateKey" required>{packTemplateKeys.map((key) => <option key={key} value={key}>{packTemplates[key].label}</option>)}</select></div>
@@ -147,7 +147,7 @@ export function CreatePackForm({ kits, caseStudies, assets, leads }: { kits: rea
     <CheckList legend="Documents to include" name="assetIds" options={assets} />
     <p className="text-xs leading-5 text-muted-foreground">The template limits how many case studies you can choose. A cover note is drafted from your selections; you review and edit it before anyone approves the pack.</p>
     <FormMessage state={state} /><SubmitButton pendingLabel="Creating…">Create pack</SubmitButton>
-  </form>;
+  </RestoringForm>;
 }
 
 type PackFormPack = Readonly<{ id: string; title: string; recipientName: string; recipientOrganisation: string | null; message: string; status: string; updatedAt: Date }>;
@@ -156,7 +156,7 @@ export function UpdatePackForm({ pack, caseStudies, assets, selectedCaseStudyIds
   pack: PackFormPack; caseStudies: readonly Option[]; assets: readonly Option[]; selectedCaseStudyIds: readonly string[]; selectedAssetIds: readonly string[]; kitIsBehind: boolean;
 }) {
   const [state, action] = useActionState(updatePackAction, idle);
-  return <form action={action} className="grid gap-4">
+  return <RestoringForm action={action} className="grid gap-4" state={state}>
     <Hidden values={{ packId: pack.id, expectedUpdatedAt: pack.updatedAt.toISOString() }} />
     <div className="grid gap-2"><Label htmlFor="up-title">Pack title</Label><Input defaultValue={pack.title} id="up-title" maxLength={160} minLength={2} name="title" required /></div>
     <div className="grid gap-4 sm:grid-cols-2">
@@ -169,7 +169,7 @@ export function UpdatePackForm({ pack, caseStudies, assets, selectedCaseStudyIds
     {kitIsBehind ? <label className="flex items-start gap-2 text-sm"><input className="mt-1" name="useLatestKitVersion" type="checkbox" /><span>Use the latest saved version of the kit (this pack is pinned to an older one).</span></label> : null}
     {pack.status === "approved" ? <p className="rounded-xl border border-warning/40 bg-warning/10 p-3 text-sm">This pack is approved. Saving a change sends it back to draft, requires approval again and revokes its share links.</p> : null}
     <FormMessage state={state} /><SubmitButton pendingLabel="Saving…">Save pack</SubmitButton>
-  </form>;
+  </RestoringForm>;
 }
 
 export const ApprovePackForm = ({ packId }: { packId: string }) =>

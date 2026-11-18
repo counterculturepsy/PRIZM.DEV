@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { Metadata } from "next";
 import Link from "next/link";
 import { CreateProposalForm } from "@/components/forms/proposal-forms";
 import { Card } from "@/components/ui/card";
@@ -6,6 +7,9 @@ import { hasCapability } from "@/modules/workspaces/scope";
 import { listCrmLeads } from "@/server/crm/queries";
 import { listProposals, proposalListStatuses, type ProposalListStatus } from "@/server/proposals/service";
 import { getWorkspaceContext } from "@/server/workspaces/context";
+
+export const metadata: Metadata = { title: "Proposals" };
+
 export default async function ProposalsPage({ searchParams }: { searchParams: Promise<{ leadId?: string | string[] | undefined; status?: string | string[] | undefined }> }) {
   const { scope } = await getWorkspaceContext("read");
   const query = await searchParams;

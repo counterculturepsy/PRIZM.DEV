@@ -95,6 +95,12 @@ test("a workspace builds a kit, approves a pack, shares it by revocable link, an
   await page.locator("#pack-title").fill("Acme application");
   await page.locator("#pack-recipient").fill("Sam Recruiter");
   await page.locator("#pack-org").fill("Acme");
+  // A rejected submit (no case study chosen yet) must keep what the person typed.
+  await page.getByRole("button", { name: "Create pack" }).click();
+  await expect(page.locator("p[role='alert']")).toContainText(/case stud/i);
+  await expect(page.locator("#pack-title")).toHaveValue("Acme application");
+  await expect(page.locator("#pack-recipient")).toHaveValue("Sam Recruiter");
+  await expect(page.locator("#pack-org")).toHaveValue("Acme");
   await page.getByRole("checkbox", { name: /Tenant-isolated CRM/ }).check();
   await page.getByRole("button", { name: "Create pack" }).click();
   await expect(page).toHaveURL(/\/app\/kits\/packs\/[0-9a-f-]{36}$/);
