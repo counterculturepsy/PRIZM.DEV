@@ -36,6 +36,13 @@ export function listCrmLeads(scope: WorkspaceScope) {
     .limit(200);
 }
 
+/** The workspace's existing lead for a company, if any. A company can have at most one lead per workspace. */
+export async function getLeadIdForCompany(scope: WorkspaceScope, companyId: string): Promise<string | null> {
+  const [row] = await getDatabase().select({ id: leads.id }).from(leads)
+    .where(and(tenantWhere(leads.workspaceId, scope), eq(leads.companyId, companyId))).limit(1);
+  return row?.id ?? null;
+}
+
 export function listLeadCandidates(scope: WorkspaceScope) {
   return getDatabase().select({ id: companies.id, name: companies.name, industry: companies.industry, city: companies.city })
     .from(companies)

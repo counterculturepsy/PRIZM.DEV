@@ -33,6 +33,14 @@ export function CreateLeadFromOpportunityForm({ companyId, opportunityId, title 
   return <form action={action} className="grid gap-2"><input name="companyId" type="hidden" value={companyId} /><input name="sourceOpportunityId" type="hidden" value={opportunityId} /><input name="title" type="hidden" value={title} /><SubmitButton pendingLabel="Creating lead…">Create CRM lead</SubmitButton><FormMessage state={state} /></form>;
 }
 
+/** Creates the workspace's CRM lead straight from a company profile, with no audit or opportunity. The service is idempotent per company. */
+export function CreateLeadFromCompanyForm({ companyId, companyName }: { companyId: string; companyName: string }) {
+  const [state, action] = useActionState(createCrmLeadAction, initialState);
+  const name = companyName.trim().slice(0, 160);
+  const title = name.length >= 2 ? name : `${name} lead`;
+  return <form action={action} className="grid gap-2"><input name="companyId" type="hidden" value={companyId} /><input name="sourceOpportunityId" type="hidden" value="" /><input name="title" type="hidden" value={title} /><SubmitButton pendingLabel="Creating lead…">Create lead</SubmitButton><FormMessage state={state} /></form>;
+}
+
 type LeadDetailsFormLead = Readonly<{
   id: string; title: string; ownerUserId: string | null; valueMinor: number | null; currency: string; expectedCloseAt: Date | null; updatedAt: Date;
 }>;
