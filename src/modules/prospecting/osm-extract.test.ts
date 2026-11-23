@@ -101,6 +101,33 @@ describe("extract line parsing", () => {
   });
 });
 
+describe("Unicode normalization", () => {
+  const vietnam = { filters, bbox: { minLon: 102, minLat: 8, maxLon: 110, maxLat: 24 } };
+  const decomposedHaNoi = "Hà Nội";
+
+  it("stores names, streets and cities in NFC even when OpenStreetMap holds combining marks", () => {
+    const parsed = parseExtractLine(line("n1", { name: `Nha Khoa ${decomposedHaNoi}`, amenity: "dentist", "addr:street": "Phố Huế", "addr:city": decomposedHaNoi }, point(105.85, 21.03)), vietnam);
+    if (!parsed.ok || parsed.record.kind !== "place") throw new Error("Expected a place");
+    expect(parsed.record.name).toBe("Nha Khoa Hà Nội");
+    expect(parsed.record.name).toBe(parsed.record.name.normalize("NFC"));
+    expect(parsed.record.city).toBe("Hà Nội");
+    expect(parsed.record.address).toBe("Phố Huế");
+    expect(parsed.record.name.length).toBe("Nha Khoa Hà Nội".length);
+  });
+
+  it("normalizes localities, so a precomposed search matches a decomposed source name", () => {
+    const parsed = parseExtractLine(line("n2", { name: decomposedHaNoi, place: "city", population: "8000000" }, point(105.85, 21.03)), vietnam);
+    if (!parsed.ok || parsed.record.kind !== "locality") throw new Error("Expected a locality");
+    expect(parsed.record.name).toBe("Hà Nội");
+  });
+
+  it("leaves already-composed text and ASCII untouched", () => {
+    const parsed = parseExtractLine(line("n3", { name: "Cà Phê Trứng Giảng", amenity: "dentist" }, point(105.85, 21.03)), vietnam);
+    if (!parsed.ok) throw new Error("Expected a place");
+    expect(parsed.record.name).toBe("Cà Phê Trứng Giảng");
+  });
+});
+
 describe("osmium expressions and industry resolution", () => {
   it("groups the configured tags by key, plus localities", () => {
     const expressions = buildTagsFilterExpressions(OSM_INDUSTRY_FILTERS);

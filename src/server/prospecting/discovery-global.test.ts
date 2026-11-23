@@ -133,7 +133,7 @@ describe("provider configuration and routing", () => {
       createDiscoveryProviders(envWith({ DISCOVERY_PROVIDER: "osm_extract", DISCOVERY_TERMS_VERIFIED_FOR: "osm_extract" }))[0],
       createDiscoveryProviders(envWith({ DISCOVERY_PROVIDER: "overpass", DISCOVERY_TERMS_VERIFIED_FOR: "overpass", DISCOVERY_USER_AGENT: "PRIZMDEV/1.0 (https://example.com/contact)" }))[0],
     ];
-    expect(extract?.capabilities).toMatchObject({ countries: ["ZA"], dataKind: "local_dataset", keyword: true, region: false });
+    expect(extract?.capabilities).toMatchObject({ countries: ["VN", "ZA"], dataKind: "local_dataset", keyword: true, region: false });
     expect(overpass).toBeDefined();
   });
 

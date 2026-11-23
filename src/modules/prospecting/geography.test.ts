@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bboxContains, cleanDisplayText, foldText, KNOWN_LOCATIONS, listKnownCities, locationKey, resolveCity, resolveCountry } from "./geography";
+import { bboxContains, cleanDisplayText, distanceKm, foldText, KNOWN_LOCATIONS, listKnownCities, locationKey, resolveCity, resolveCountry } from "./geography";
 
 describe("foldText", () => {
   it("removes Vietnamese diacritics, including đ, and case", () => {
@@ -86,6 +86,18 @@ describe("registry", () => {
     expect(listKnownCities("ZA")).toEqual(["Cape Town", "Johannesburg", "Pretoria", "Durban", "Gqeberha", "Bloemfontein"]);
     expect(listKnownCities("VN")).toEqual(["Hanoi", "Ho Chi Minh City", "Da Nang", "Hai Phong", "Ha Long", "Cam Pha"]);
     expect(new Set(KNOWN_LOCATIONS.map((location) => locationKey(location.countryCode, location.name))).size).toBe(KNOWN_LOCATIONS.length);
+  });
+});
+
+describe("distanceKm", () => {
+  it("measures great-circle distance between registry cities", () => {
+    const at = (name: string) => KNOWN_LOCATIONS.find((location) => location.name === name)!;
+    expect(distanceKm(at("Hanoi").lat, at("Hanoi").lon, at("Hanoi").lat, at("Hanoi").lon)).toBe(0);
+    const hanoiToHcmc = distanceKm(at("Hanoi").lat, at("Hanoi").lon, at("Ho Chi Minh City").lat, at("Ho Chi Minh City").lon);
+    expect(hanoiToHcmc).toBeGreaterThan(1100);
+    expect(hanoiToHcmc).toBeLessThan(1180);
+    expect(distanceKm(at("Ha Long").lat, at("Ha Long").lon, at("Cam Pha").lat, at("Cam Pha").lon)).toBeGreaterThan(20);
+    expect(distanceKm(at("Ha Long").lat, at("Ha Long").lon, at("Cam Pha").lat, at("Cam Pha").lon)).toBeLessThan(35);
   });
 });
 

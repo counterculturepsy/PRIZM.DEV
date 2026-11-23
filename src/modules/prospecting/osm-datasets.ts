@@ -14,6 +14,7 @@ export type DatasetInfo = Readonly<{ id: string; regionKey: string; regionLabel:
 export const OSM_EXTRACT_REGION_COUNTRY: Readonly<Record<string, string>> = {
   "western-cape": "ZA",
   gauteng: "ZA",
+  vietnam: "VN",
 };
 
 export function datasetCountry(regionKey: string): string | undefined {

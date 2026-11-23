@@ -111,6 +111,14 @@ export function listKnownCities(countryCode: string): readonly string[] {
   return KNOWN_LOCATIONS.filter((location) => location.countryCode === countryCode).map((location) => location.name);
 }
 
+/** Great-circle distance in kilometres (haversine). */
+export function distanceKm(latA: number, lonA: number, latB: number, lonB: number): number {
+  const rad = Math.PI / 180;
+  const a = Math.sin(((latB - latA) * rad) / 2) ** 2
+    + Math.cos(latA * rad) * Math.cos(latB * rad) * Math.sin(((lonB - lonA) * rad) / 2) ** 2;
+  return 6371.0088 * 2 * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
 export type BoundingBox = Readonly<{ minLon: number; minLat: number; maxLon: number; maxLat: number }>;
 
 export function bboxContains(box: BoundingBox, lat: number, lon: number): boolean {

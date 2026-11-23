@@ -33,6 +33,20 @@ const GAUTENG_LINES = [
   realty("n507", "Fixture Realty Midrand", 28.1283, -25.9992),
   feature("n508", { name: "Fixture Law Johannesburg", office: "lawyer" }, 28.0473, -26.2041),
 ];
+const VIETNAM_BBOX = { minLon: 102.1, minLat: 8.3, maxLon: 109.6, maxLat: 23.5 };
+const VIETNAM_LINES = [
+  // The Hanoi locality is deliberately stored decomposed, as some OpenStreetMap names are.
+  feature("n9201", { name: "Hà Nội", place: "city", population: "8000000" }, 105.8542, 21.0285),
+  feature("n9202", { name: "Thành phố Hồ Chí Minh", place: "city", population: "9000000" }, 106.6297, 10.8231),
+  feature("n601", { name: "Công Ty Phần Mềm Mẫu", office: "it", website: "n601.example.test" }, 105.85, 21.03),
+  feature("n602", { name: "Nhà Hàng Mẫu", amenity: "restaurant" }, 106.63, 10.82),
+  // Three places called "Hạ Long", as in the real data: one in Ha Long itself, one about 40 km east, one ~1,000 km south.
+  feature("n9203", { name: "Hạ Long", place: "suburb" }, 107.1073, 20.9454),
+  feature("n9204", { name: "Hạ Long", place: "suburb" }, 107.4393, 21.0825),
+  feature("n9205", { name: "Hạ Long", place: "village" }, 108.5963, 12.7718),
+  feature("n603", { name: "Quán Hạ Long Gần", amenity: "restaurant" }, 107.1073, 20.9454),
+  feature("n604", { name: "Quán Hạ Long Xa", amenity: "restaurant" }, 108.5963, 12.7718),
+];
 const metaFor = (regionKey: string, regionLabel: string, bbox: typeof GAUTENG_BBOX) => ({
   regionKey, regionLabel, sourceName: "Fixture extract", sourceUrl: "https://download.geofabrik.de/africa/south-africa-latest.osm.pbf",
   sourceDataTimestamp: new Date("2026-10-25T21:21:21.000Z"), bbox,
@@ -134,6 +148,45 @@ describe("OpenStreetMap extract with several regions", () => {
     expect(rows.filter((row) => row.status === "ready").map((row) => row.key).sort()).toEqual(["gauteng", "western-cape"]);
     expect(rows.filter((row) => row.status === "superseded").map((row) => row.key)).toEqual(["gauteng"]);
     expect(names(await provider().search(realEstate("Cape Town")))).toEqual(["Fixture Realty Cape Town"]);
+  });
+
+  it("serves Vietnam as a third region without leaking across countries, and matches decomposed Vietnamese names", async () => {
+    const { db, provider, loader, loadBoth } = await setup();
+    await loadBoth();
+    await loader.loadOsmExtract(VIETNAM_LINES, metaFor("vietnam", "Vietnam", VIETNAM_BBOX));
+    const ready = await db.select({ key: osmDatasets.regionKey }).from(osmDatasets).where(eq(osmDatasets.status, "ready"));
+    expect(ready.map((row) => row.key).sort()).toEqual(["gauteng", "vietnam", "western-cape"]);
+    const p = provider();
+    const vn = (city: string, industry: string) => ({ countryCode: "VN", city, industries: [industry] }) as const;
+
+    for (const typed of ["Hanoi", "hà nội", "HA NOI", "Hà Nội"]) {
+      const page = await p.search(vn(typed, "IT & Software Companies"));
+      expect(names(page), typed).toEqual(["Công Ty Phần Mềm Mẫu"]);
+      expect(page.provenance).toMatchObject({ dataset_region: "vietnam", search_locality: "Hà Nội" });
+    }
+    expect(names(await p.search(vn("Saigon", "Restaurants & Cafés")))).toEqual(["Nhà Hàng Mẫu"]);
+    expect(names(await p.search(vn("HCMC", "Restaurants & Cafés")))).toEqual(["Nhà Hàng Mẫu"]);
+    expect(await p.coverage(vn("Hanoi", "x"))).toEqual({ supported: true, basis: "Loaded Vietnam OpenStreetMap extract" });
+
+    // Nothing crosses countries, in either direction.
+    await expect(p.search(vn("Johannesburg", "Real Estate Agencies"))).rejects.toMatchObject({ code: "invalid_query", message: expect.stringContaining("not in the loaded Vietnam extract") });
+    await expect(p.search(realEstate("Hanoi"))).rejects.toMatchObject({ code: "invalid_query", message: expect.stringContaining("not in the loaded Gauteng and Western Cape extracts") });
+    expect(names(await p.search(realEstate("Johannesburg"))).every((name) => name.includes("Johannesburg"))).toBe(true);
+    expect(await p.coverage({ countryCode: "US", city: "Austin", industries: ["x"] })).toEqual({ supported: false, reason: "The loaded Gauteng, Vietnam and Western Cape extracts cover South Africa and Vietnam only." });
+    expect(await p.coverage({ countryCode: "ZA", city: "Durban", industries: ["x"] })).toEqual({ supported: false, reason: "Durban is outside the loaded Gauteng and Western Cape extracts." });
+  });
+
+  it("never centres a registry city's search on a same-named place far from it", async () => {
+    const { provider, loader } = await setup();
+    await loader.loadOsmExtract(VIETNAM_LINES, metaFor("vietnam", "Vietnam", VIETNAM_BBOX));
+    for (const typed of ["Ha Long", "Hạ Long", "halong"]) {
+      const page = await provider().search({ countryCode: "VN", city: typed, industries: ["Restaurants & Cafés"] });
+      expect(names(page), typed).toEqual(["Quán Hạ Long Gần"]);
+      expect(page.provenance).toMatchObject({ search_locality: "Hạ Long" });
+    }
+    // An unregistered place name is still resolved by the existing ranking, because no known centre is available.
+    const unregistered = await provider().search({ countryCode: "VN", city: "Hạ Long Bay", industries: ["Restaurants & Cafés"] }).catch((error: unknown) => error);
+    expect(unregistered).toMatchObject({ code: "invalid_query" });
   });
 
   it("does not list a business twice when overlapping datasets both contain it", async () => {

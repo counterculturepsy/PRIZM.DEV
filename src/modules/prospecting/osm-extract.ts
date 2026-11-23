@@ -161,7 +161,8 @@ export function isInsideBbox(point: { lon: number; lat: number }, bbox: Bbox): b
 
 function cleanText(value: unknown, maxLength = MAX_TAG_VALUE_LENGTH): string | null {
   if (typeof value !== "string") return null;
-  const cleaned = value.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+  // NFC so a name stored with combining marks ("Hà Nội") matches the same name typed precomposed ("Hà Nội").
+  const cleaned = value.normalize("NFC").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
   return cleaned && cleaned.length <= maxLength ? cleaned : null;
 }
 

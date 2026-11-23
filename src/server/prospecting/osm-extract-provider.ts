@@ -1,7 +1,7 @@
 import { and, asc, between, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { normalizeSearchPlace, resolveIndustryTags } from "@/modules/prospecting/osm-extract";
-import { resolveCity } from "@/modules/prospecting/geography";
+import { distanceKm as greatCircleKm, resolveCity } from "@/modules/prospecting/geography";
 import { OSM_EXTRACT_REGION_COUNTRY, selectCandidateDatasets } from "@/modules/prospecting/osm-datasets";
 import { assertKeyword, type IndustryFilters } from "@/modules/prospecting/overpass";
 import {
@@ -26,6 +26,8 @@ const MAX_RADIUS_KM = 50;
 const DEFAULT_PAGE_SIZE = 100;
 const EARTH_RADIUS_KM = 6371.0088;
 const KM_PER_DEGREE = 111.32;
+/** A named place must lie within this distance of a registry city's known centre to be used as that city. */
+const MAX_ANCHOR_DISTANCE_KM = 60;
 
 /** A local database read has no external quota, so runs are limited far less than calls to a public API. */
 export const OSM_EXTRACT_LIMITS: DiscoveryLimits = {
@@ -84,7 +86,8 @@ export class OsmExtractProvider implements DiscoveryProvider {
   };
   readonly limits = OSM_EXTRACT_LIMITS;
   readonly capabilities: ProviderCapabilities = {
-    countries: ["ZA"], region: false, city: true, industry: true, keyword: true, pagination: "cursor", dataKind: "local_dataset",
+    // Countries the extract regions in OSM_EXTRACT_REGION_COUNTRY can serve. Whether a database actually holds one is decided by coverage().
+    countries: [...new Set(Object.values(OSM_EXTRACT_REGION_COUNTRY))].sort(), region: false, city: true, industry: true, keyword: true, pagination: "cursor", dataKind: "local_dataset",
   };
 
   constructor(private readonly options: OsmExtractProviderOptions) {}
@@ -128,9 +131,15 @@ export class OsmExtractProvider implements DiscoveryProvider {
       asc(osmLocalities.id),
     ).limit(50);
     const placeRank: Readonly<Record<string, number>> = { city: 0, town: 1, suburb: 2, village: 3, hamlet: 4 };
-    const locality = found.toSorted((a, b) => (placeRank[a.placeType] ?? 4) - (placeRank[b.placeType] ?? 4)
+    // Place names repeat (a village called "Hạ Long" exists about 1,000 km from the city). For a registry city, only
+    // places near its known centre qualify, and the nearest wins a tie, so a namesake can never centre the search.
+    const anchor = city.known;
+    const nearby = anchor ? found.filter((place) => greatCircleKm(anchor.lat, anchor.lon, place.lat, place.lon) <= MAX_ANCHOR_DISTANCE_KM) : found;
+    const toAnchor = (place: { lat: number; lon: number }) => (anchor ? greatCircleKm(anchor.lat, anchor.lon, place.lat, place.lon) : 0);
+    const locality = nearby.toSorted((a, b) => (placeRank[a.placeType] ?? 4) - (placeRank[b.placeType] ?? 4)
       || (b.population ?? -1) - (a.population ?? -1)
       || (rank.get(a.datasetId) ?? 0) - (rank.get(b.datasetId) ?? 0)
+      || toAnchor(a) - toAnchor(b)
       || a.id - b.id)[0];
     if (!locality) {
       const labels = [...new Set(selection.candidates.map((candidate) => candidate.regionLabel))].sort().join(" and ");
