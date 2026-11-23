@@ -67,6 +67,13 @@ describe("DiscoverySearchPanel", () => {
     expect(screen.getByLabelText("Business name keyword (optional)")).toBeInTheDocument();
   });
 
+  it("warns before searching when no configured source covers the selected country", () => {
+    render(<DiscoverySearchPanel countries={countries} industries={industries} initial={{ ...initial, country: "VN" }} sources={[sources[0]]} />);
+    expect(screen.getByText("No data source is configured for Vietnam")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Country"), { target: { value: "ZA" } });
+    expect(screen.queryByText("No data source is configured for Vietnam")).not.toBeInTheDocument();
+  });
+
   it("shows results with a synthetic-data banner, the source, and honest paging", async () => {
     searchCompaniesAction.mockResolvedValueOnce({ status: "results", preview: preview([candidate(1), candidate(2)], { nextCursor: "next" }) });
     renderPanel();

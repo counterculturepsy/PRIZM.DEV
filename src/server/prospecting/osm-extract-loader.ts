@@ -192,6 +192,7 @@ export async function describeExtractDatasets() {
   return getDatabase().select({
     id: osmDatasets.id, regionKey: osmDatasets.regionKey, status: osmDatasets.status, places: osmDatasets.placeCount,
     localities: osmDatasets.localityCount, dataTimestamp: osmDatasets.sourceDataTimestamp, completedAt: osmDatasets.completedAt,
-    approxPlaceRows: sql<number>`(select count(*)::int from ${osmPlaces} where ${osmPlaces.datasetId} = ${osmDatasets.id})`,
+    // Qualified on purpose: in a single-table select an unqualified "id" would bind to the inner places table.
+    approxPlaceRows: sql<number>`(select count(*)::int from osm_source.places as p where p.dataset_id = osm_source.datasets.id)`,
   }).from(osmDatasets).orderBy(sql`${osmDatasets.createdAt} desc`);
 }

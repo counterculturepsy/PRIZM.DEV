@@ -1,7 +1,7 @@
 // @vitest-environment node
 
 import { describe, expect, it, vi } from "vitest";
-import { serverEnvSchema, type ServerEnv } from "@/config/env";
+import { DISCOVERY_FIXTURE_ACK_VALUE, serverEnvSchema, type ServerEnv } from "@/config/env";
 import { assertKeyword, buildOverpassQuery, OSM_INDUSTRY_FILTERS } from "@/modules/prospecting/overpass";
 import { DiscoveryProviderError, type DiscoveryProvider } from "@/modules/prospecting/providers";
 import { signCandidate, verifyCandidate } from "./candidate-token";
@@ -77,7 +77,7 @@ describe("local extract coverage", () => {
 describe("provider configuration and routing", () => {
   it("builds nothing unless a provider is enabled, and keeps real sources ahead of fixtures", () => {
     expect(createDiscoveryProviders(envWith({}))).toEqual([]);
-    const providers = createDiscoveryProviders(envWith({ DISCOVERY_PROVIDERS: "fixture,osm_extract", DISCOVERY_TERMS_VERIFIED_FOR: "fixture,osm_extract" }));
+    const providers = createDiscoveryProviders(envWith({ DISCOVERY_PROVIDERS: "fixture,osm_extract", DISCOVERY_TERMS_VERIFIED_FOR: "fixture,osm_extract", DISCOVERY_FIXTURE_ACK: DISCOVERY_FIXTURE_ACK_VALUE }));
     expect(providers.map((provider) => provider.id)).toEqual(["osm_extract", "fixture"]);
     expect(providers.map((provider) => provider.capabilities?.dataKind)).toEqual(["local_dataset", "synthetic_fixture"]);
   });
@@ -89,29 +89,43 @@ describe("provider configuration and routing", () => {
 
   it("requires terms acknowledgement for every listed provider and a contact for Overpass", () => {
     expect(serverEnvSchema.safeParse({ ...baseEnv, DISCOVERY_PROVIDERS: "osm_extract,fixture", DISCOVERY_TERMS_VERIFIED_FOR: "osm_extract" }).success).toBe(false);
-    expect(serverEnvSchema.safeParse({ ...baseEnv, DISCOVERY_PROVIDERS: "osm_extract,fixture", DISCOVERY_TERMS_VERIFIED_FOR: "osm_extract, fixture" }).success).toBe(true);
+    expect(serverEnvSchema.safeParse({ ...baseEnv, DISCOVERY_PROVIDERS: "osm_extract,fixture", DISCOVERY_TERMS_VERIFIED_FOR: "osm_extract, fixture", DISCOVERY_FIXTURE_ACK: DISCOVERY_FIXTURE_ACK_VALUE }).success).toBe(true);
     expect(serverEnvSchema.safeParse({ ...baseEnv, DISCOVERY_PROVIDERS: "overpass", DISCOVERY_TERMS_VERIFIED_FOR: "overpass" }).success).toBe(false);
     expect(serverEnvSchema.safeParse({ ...baseEnv, DISCOVERY_PROVIDERS: "overpass", DISCOVERY_TERMS_VERIFIED_FOR: "overpass", DISCOVERY_USER_AGENT: "PRIZMDEV/1.0 (https://example.com/contact)" }).success).toBe(true);
     expect(serverEnvSchema.safeParse({ ...baseEnv, DISCOVERY_PROVIDERS: "bing", DISCOVERY_TERMS_VERIFIED_FOR: "bing" }).success).toBe(false);
   });
 
-  it("refuses the synthetic fixture provider on a Vercel production deployment, and allows it elsewhere only when acknowledged", () => {
-    const fixtureEnv = { ...baseEnv, DISCOVERY_PROVIDERS: "fixture", DISCOVERY_TERMS_VERIFIED_FOR: "fixture" };
-    vi.stubEnv("VERCEL_ENV", "production");
-    try {
-      const refused = serverEnvSchema.safeParse({ ...fixtureEnv, NODE_ENV: "production" });
-      expect(refused.success).toBe(false);
-      expect(refused.error?.issues.some((issue) => issue.message.includes("never be enabled on a Vercel production deployment"))).toBe(true);
-    } finally {
-      vi.unstubAllEnvs();
+  it("keeps the synthetic fixture provider off by default and out of every production runtime", () => {
+    const base = { ...baseEnv, DISCOVERY_PROVIDERS: "fixture", DISCOVERY_TERMS_VERIFIED_FOR: "fixture" };
+    const parse = (extra: Record<string, string>) => serverEnvSchema.safeParse({ ...base, ...extra });
+
+    // Disabled by default: no environment accepts it without the explicit acknowledgement.
+    for (const NODE_ENV of ["development", "test", "production"]) expect(parse({ NODE_ENV }).success, `no acknowledgement in ${NODE_ENV}`).toBe(false);
+    expect(parse({ NODE_ENV: "test", DISCOVERY_FIXTURE_ACK: "yes" }).success).toBe(false);
+
+    // Local development and automated testing: allowed only with the acknowledgement.
+    for (const NODE_ENV of ["development", "test"]) {
+      expect(parse({ NODE_ENV, DISCOVERY_FIXTURE_ACK: DISCOVERY_FIXTURE_ACK_VALUE }).success, `acknowledged in ${NODE_ENV}`).toBe(true);
     }
-    vi.stubEnv("VERCEL_ENV", "preview");
-    try {
-      expect(serverEnvSchema.safeParse({ ...fixtureEnv, NODE_ENV: "production" }).success).toBe(true);
-    } finally {
-      vi.unstubAllEnvs();
+
+    // Every production runtime refuses it even with the acknowledgement: self-hosted next start, Vercel Preview, Vercel Production.
+    for (const vercelEnv of ["", "preview", "production"]) {
+      vi.stubEnv("VERCEL_ENV", vercelEnv);
+      try {
+        const result = parse({ NODE_ENV: "production", DISCOVERY_FIXTURE_ACK: DISCOVERY_FIXTURE_ACK_VALUE });
+        expect(result.success, `production runtime (VERCEL_ENV="${vercelEnv}")`).toBe(false);
+        expect(result.error?.issues.some((issue) => issue.message.includes("NODE_ENV=production"))).toBe(true);
+      } finally {
+        vi.unstubAllEnvs();
+      }
     }
-    expect(serverEnvSchema.safeParse({ ...baseEnv, DISCOVERY_PROVIDERS: "fixture" }).success).toBe(false);
+  });
+
+  it("never builds the fixture provider unless the approved combination is present, even if validation is bypassed", () => {
+    const approved = envWith({ DISCOVERY_PROVIDERS: "fixture", DISCOVERY_TERMS_VERIFIED_FOR: "fixture", DISCOVERY_FIXTURE_ACK: DISCOVERY_FIXTURE_ACK_VALUE });
+    expect(createDiscoveryProviders(approved).map((provider) => provider.id)).toEqual(["fixture"]);
+    expect(createDiscoveryProviders({ ...approved, NODE_ENV: "production" })).toEqual([]);
+    expect(createDiscoveryProviders({ ...approved, DISCOVERY_FIXTURE_ACK: undefined })).toEqual([]);
   });
 
   it("declares what each provider can do", () => {

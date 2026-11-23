@@ -1,7 +1,8 @@
-import { and, asc, between, desc, eq, sql } from "drizzle-orm";
+import { and, asc, between, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { normalizeSearchPlace, resolveIndustryTags } from "@/modules/prospecting/osm-extract";
-import { bboxContains, getCountry, resolveCity } from "@/modules/prospecting/geography";
+import { resolveCity } from "@/modules/prospecting/geography";
+import { OSM_EXTRACT_REGION_COUNTRY, selectCandidateDatasets } from "@/modules/prospecting/osm-datasets";
 import { assertKeyword, type IndustryFilters } from "@/modules/prospecting/overpass";
 import {
   DiscoveryProviderError,
@@ -35,34 +36,24 @@ export const OSM_EXTRACT_LIMITS: DiscoveryLimits = {
   providerCooldownSeconds: 30,
 };
 
-/** Country each loaded extract belongs to. An extract whose region is not listed here is treated as covering nothing. */
-export const OSM_EXTRACT_REGION_COUNTRY: Readonly<Record<string, string>> = { "western-cape": "ZA" };
+export { OSM_EXTRACT_REGION_COUNTRY };
 
 type DatasetRow = typeof osmDatasets.$inferSelect;
 
-/** Pure coverage rule: right country, and a known city must lie inside the extract's bounding box. */
-export function datasetCoverage(dataset: Pick<DatasetRow, "regionKey" | "regionLabel" | "bbox">, query: BusinessSearchQuery): CoverageDecision {
-  const datasetCountry = Object.hasOwn(OSM_EXTRACT_REGION_COUNTRY, dataset.regionKey) ? OSM_EXTRACT_REGION_COUNTRY[dataset.regionKey] : undefined;
-  if (datasetCountry !== query.countryCode) {
-    const covered = datasetCountry ? (getCountry(datasetCountry)?.name ?? datasetCountry) : "no verified country";
-    return { supported: false, reason: `The loaded ${dataset.regionLabel} extract covers ${covered} only.` };
-  }
-  if (query.city) {
-    const known = resolveCity(query.countryCode, query.city).known;
-    if (known && !bboxContains(dataset.bbox, known.lat, known.lon)) {
-      return { supported: false, reason: `${known.name} is outside the loaded ${dataset.regionLabel} extract.` };
-    }
-  }
-  return { supported: true, basis: `Loaded ${dataset.regionLabel} OpenStreetMap extract` };
+/** Coverage of a single dataset. Kept for callers that reason about one extract; the provider itself uses the multi-dataset selection. */
+export function datasetCoverage(dataset: Pick<DatasetRow, "regionKey" | "regionLabel" | "bbox"> & { id?: string }, query: BusinessSearchQuery): CoverageDecision {
+  const selection = selectCandidateDatasets([{ id: dataset.id ?? "single", regionKey: dataset.regionKey, regionLabel: dataset.regionLabel, bbox: dataset.bbox }], query);
+  return selection.supported ? { supported: true, basis: selection.basis } : selection;
 }
 
-const cursorSchema = z.object({ d: z.number().finite().min(0), i: z.number().int().positive() });
+/** The cursor also names the dataset it was issued for, so a page marker can never be replayed against different data. */
+const cursorSchema = z.object({ d: z.number().finite().min(0), i: z.number().int().positive(), ds: z.uuid().optional() });
 
-function encodeCursor(distanceKm: number, id: number): string {
-  return Buffer.from(JSON.stringify({ d: distanceKm, i: id })).toString("base64url");
+function encodeCursor(distanceKm: number, id: number, datasetId: string): string {
+  return Buffer.from(JSON.stringify({ d: distanceKm, i: id, ds: datasetId })).toString("base64url");
 }
 
-function decodeCursor(cursor: string): { d: number; i: number } {
+function decodeCursor(cursor: string): { d: number; i: number; ds?: string | undefined } {
   try {
     const parsed = cursorSchema.safeParse(JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")));
     if (parsed.success) return parsed.data;
@@ -98,16 +89,15 @@ export class OsmExtractProvider implements DiscoveryProvider {
 
   constructor(private readonly options: OsmExtractProviderOptions) {}
 
-  private async loadDataset(): Promise<DatasetRow | undefined> {
-    const [dataset] = await getDatabase().select().from(osmDatasets).where(eq(osmDatasets.status, "ready"))
-      .orderBy(desc(osmDatasets.completedAt)).limit(1);
-    return dataset;
+  /** The newest ready dataset of every region. Several regions can be ready at once; a new load only replaces its own region. */
+  private async loadDatasets(): Promise<DatasetRow[]> {
+    return getDatabase().selectDistinctOn([osmDatasets.regionKey]).from(osmDatasets).where(eq(osmDatasets.status, "ready"))
+      .orderBy(osmDatasets.regionKey, desc(osmDatasets.completedAt), asc(osmDatasets.id));
   }
 
   async coverage(query: BusinessSearchQuery): Promise<CoverageDecision> {
-    const dataset = await this.loadDataset();
-    if (!dataset) return { supported: false, reason: "No local OpenStreetMap extract is loaded yet." };
-    return datasetCoverage(dataset, query);
+    const selection = selectCandidateDatasets(await this.loadDatasets(), query);
+    return selection.supported ? { supported: true, basis: selection.basis } : selection;
   }
 
   async search(query: BusinessSearchQuery): Promise<BusinessSearchPage> {
@@ -120,22 +110,36 @@ export class OsmExtractProvider implements DiscoveryProvider {
     const cursor = query.cursor ? decodeCursor(query.cursor) : null;
     const db = getDatabase();
 
-    const dataset = await this.loadDataset();
-    if (!dataset) throw new DiscoveryProviderError("provider_unavailable", "No local OpenStreetMap extract is loaded yet.");
-    const coverage = datasetCoverage(dataset, query);
-    if (!coverage.supported) throw new DiscoveryProviderError("unsupported_location", coverage.reason);
+    const datasets = await this.loadDatasets();
+    if (datasets.length === 0) throw new DiscoveryProviderError("provider_unavailable", "No local OpenStreetMap extract is loaded yet.");
+    const selection = selectCandidateDatasets(datasets, query);
+    if (!selection.supported) throw new DiscoveryProviderError("unsupported_location", selection.reason);
 
+    // Find the named place in the covering datasets, then search only the dataset it belongs to. One dataset per search
+    // keeps paging and provenance single-sourced, and a business present in two overlapping datasets is never listed twice.
+    const rank = new Map(selection.candidates.map((candidate, index) => [candidate.id, index] as const));
     const localityNames = sql.join(city.osmNames.map((name) => sql`${name.toLowerCase()}`), sql`, `);
-    const [locality] = await db.select().from(osmLocalities).where(and(
-      eq(osmLocalities.datasetId, dataset.id),
+    const found = await db.select().from(osmLocalities).where(and(
+      inArray(osmLocalities.datasetId, selection.candidates.map((candidate) => candidate.id)),
       sql`lower(${osmLocalities.name}) in (${localityNames})`,
     )).orderBy(
       sql`case ${osmLocalities.placeType} when 'city' then 0 when 'town' then 1 when 'suburb' then 2 when 'village' then 3 else 4 end`,
       sql`${osmLocalities.population} desc nulls last`,
       asc(osmLocalities.id),
-    ).limit(1);
+    ).limit(50);
+    const placeRank: Readonly<Record<string, number>> = { city: 0, town: 1, suburb: 2, village: 3, hamlet: 4 };
+    const locality = found.toSorted((a, b) => (placeRank[a.placeType] ?? 4) - (placeRank[b.placeType] ?? 4)
+      || (b.population ?? -1) - (a.population ?? -1)
+      || (rank.get(a.datasetId) ?? 0) - (rank.get(b.datasetId) ?? 0)
+      || a.id - b.id)[0];
     if (!locality) {
-      throw new DiscoveryProviderError("invalid_query", `"${city.name}" is not in the loaded ${dataset.regionLabel} extract. Check the spelling or try a nearby town.`);
+      const labels = [...new Set(selection.candidates.map((candidate) => candidate.regionLabel))].sort().join(" and ");
+      throw new DiscoveryProviderError("invalid_query", `"${city.name}" is not in the loaded ${labels} ${selection.candidates.length === 1 ? "extract" : "extracts"}. Check the spelling or try a nearby town.`);
+    }
+    const dataset = datasets.find((candidate) => candidate.id === locality.datasetId);
+    if (!dataset) throw new DiscoveryProviderError("provider_unavailable", "The dataset for this place is no longer available. Search again.");
+    if (cursor?.ds && cursor.ds !== dataset.id) {
+      throw new DiscoveryProviderError("invalid_query", "The page marker belongs to different data (the extract was reloaded). Start the search again.");
     }
 
     const centerLat = sql`${locality.lat}::double precision`;
@@ -180,7 +184,7 @@ export class OsmExtractProvider implements DiscoveryProvider {
 
     return {
       records,
-      ...(rows.length > pageSize && last ? { cursor: encodeCursor(last.distance, last.place.id) } : {}),
+      ...(rows.length > pageSize && last ? { cursor: encodeCursor(last.distance, last.place.id, dataset.id) } : {}),
       provenance: {
         dataset_id: dataset.id,
         dataset_region: dataset.regionKey,

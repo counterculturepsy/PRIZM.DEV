@@ -21,6 +21,9 @@ const emailIdentity = z.string().refine((value) => {
   return Boolean(address && z.email().safeParse(address.trim()).success);
 }, "AUTH_EMAIL_FROM must be an email address or a display name followed by an email address in angle brackets");
 
+/** The exact value of DISCOVERY_FIXTURE_ACK that allows the synthetic fixture provider outside production. */
+export const DISCOVERY_FIXTURE_ACK_VALUE = "synthetic-data-not-real-companies";
+
 export const serverEnvSchema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -73,6 +76,8 @@ export const serverEnvSchema = z
     ),
     /** Provider id, or a comma-separated list of ids when several providers are enabled. */
     DISCOVERY_TERMS_VERIFIED_FOR: optionalString,
+    /** Test-only acknowledgement required before the synthetic fixture provider can be enabled outside production. */
+    DISCOVERY_FIXTURE_ACK: optionalString,
     DISCOVERY_USER_AGENT: z.preprocess((value) => value === "" ? undefined : value, z.string().min(20).max(300).optional()),
     OVERPASS_API_URL: z.preprocess((value) => value === "" ? undefined : value, z.url().refine((url) => url.startsWith("https://"), "OVERPASS_API_URL must use https").optional()),
     OSM_EXTRACT_RADIUS_KM: z.preprocess((value) => value === "" || value === undefined ? undefined : Number(value), z.number().min(1).max(50).optional()),
@@ -104,8 +109,12 @@ export const serverEnvSchema = z
       if (value.DISCOVERY_PROVIDERS.includes("overpass") && (!value.DISCOVERY_USER_AGENT || !/(https?:\/\/|@)/.test(value.DISCOVERY_USER_AGENT))) {
         context.addIssue({ code: "custom", path: ["DISCOVERY_USER_AGENT"], message: "DISCOVERY_USER_AGENT must identify this application and include a contact URL or email address." });
       }
-      if (value.DISCOVERY_PROVIDERS.includes("fixture") && (value.NODE_ENV === "production" && process.env["VERCEL_ENV"] === "production")) {
-        context.addIssue({ code: "custom", path: ["DISCOVERY_PROVIDERS"], message: "The synthetic fixture provider must never be enabled on a Vercel production deployment." });
+      if (value.DISCOVERY_PROVIDERS.includes("fixture")) {
+        if (value.NODE_ENV === "production") {
+          context.addIssue({ code: "custom", path: ["DISCOVERY_PROVIDERS"], message: "The synthetic fixture provider must never be enabled when NODE_ENV=production (production builds, self-hosted next start, and Vercel Preview or Production)." });
+        } else if (value.DISCOVERY_FIXTURE_ACK !== DISCOVERY_FIXTURE_ACK_VALUE) {
+          context.addIssue({ code: "custom", path: ["DISCOVERY_FIXTURE_ACK"], message: `The synthetic fixture provider is test-only. Set DISCOVERY_FIXTURE_ACK=${DISCOVERY_FIXTURE_ACK_VALUE} to confirm it serves fake companies.` });
+        }
       }
     }
     if (value.DISCOVERY_PROVIDER !== "none" && !value.DISCOVERY_PROVIDERS) {

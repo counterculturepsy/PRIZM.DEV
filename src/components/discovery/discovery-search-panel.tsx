@@ -182,6 +182,8 @@ export function DiscoverySearchPanel({ countries, sources, industries, initial }
       </div>
     </form>
 
+    {covering.length === 0 ? <div className="discovery-notice warn" role="note"><strong>No data source is configured for {country?.name ?? "this country"}</strong><span>A search will return a coverage message, not businesses. Ask a workspace administrator to enable a source for {country?.name ?? "this country"}.</span></div> : null}
+
     <div aria-live="polite">
       {pending ? <p className="discovery-hint" role="status">Searching{country ? ` ${values.city || country.name}` : ""}…</p> : null}
       {failure && copy ? <div className={`discovery-notice ${copy.tone}`} role={copy.tone === "error" ? "alert" : "status"}>

@@ -4,6 +4,7 @@ import {
   type BusinessSearchPage,
   type BusinessSearchQuery,
   type DiscoveryProvider,
+  type ProviderCapabilities,
   type ProviderLicense,
 } from "@/modules/prospecting/providers";
 
@@ -52,6 +53,11 @@ export class OverpassProvider implements DiscoveryProvider {
     name: "Open Database License (ODbL) 1.0",
     url: "https://www.openstreetmap.org/copyright",
     attribution: "© OpenStreetMap contributors",
+  };
+
+  /** Any country with an ISO 3166-1 area in OpenStreetMap can be queried; whether a given city returns data is unverified until tested live. */
+  readonly capabilities: ProviderCapabilities = {
+    countries: "any", region: true, city: true, industry: true, keyword: true, pagination: "none", dataKind: "live_api",
   };
 
   constructor(private readonly options: OverpassProviderOptions) {}

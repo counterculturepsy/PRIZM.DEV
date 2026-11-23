@@ -150,3 +150,20 @@ OpenStreetMap data is licensed under the ODbL; credit "© OpenStreetMap contribu
 ## Later: commercial providers
 
 Implement `DiscoveryProvider` (see `src/modules/prospecting/providers.ts`), set its `limits`, add its id to `DISCOVERY_PROVIDER`, and verify its storage terms first. Nothing else in discovery, persistence or the UI needs to change.
+
+## Multi-region datasets (Batch 3, 2026-11-23)
+
+Several regions can be `ready` at once. A load only supersedes the previous dataset **of the same `--region-key`**. At search time the provider picks the datasets whose country matches (`OSM_EXTRACT_REGION_COUNTRY` in `src/modules/prospecting/osm-datasets.ts`), keeps those whose bounding box contains a registry city, finds the named place in them, and then searches that one dataset (smallest bounding box wins, then region key). A region key that is not in the map answers no searches.
+
+The South Africa file already holds Gauteng; no download is needed. Re-filter with the current industry list, then load each region from the same GeoJSON-sequence file:
+
+```powershell
+$D = "<OSM-Data folder>"; $O = "<osmium.exe>"
+pnpm osm:extract expressions                      # copy the nwr/... and n/place lines into expressions.txt
+& $O tags-filter "$D\raw\south-africa-latest.osm.pbf" -e "$D\work\batch3\expressions.txt" -o "$D\work\batch3\filtered.osm.pbf" -O
+& $O export "$D\work\batch3\filtered.osm.pbf" -f geojsonseq --geometry-types=point,polygon -u type_id -o "$D\work\batch3\filtered.geojsonseq" -O
+pnpm osm:extract load --file "$D\work\batch3\filtered.geojsonseq" --data-timestamp 2026-10-25T21:21:21Z --sha256 <hash> --confirm-write
+pnpm osm:extract load --file "$D\work\batch3\filtered.geojsonseq" --data-timestamp 2026-10-25T21:21:21Z --sha256 <hash> --region-key gauteng --region-label Gauteng --bbox "27.0,-27.0,29.1,-25.0" --confirm-write
+```
+
+Quote the `--bbox` value in PowerShell, or the commas split it into separate arguments. Always check `DATABASE_URL` names the intended database before a `load`.

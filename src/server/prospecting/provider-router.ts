@@ -1,4 +1,4 @@
-import { getServerEnv, type ServerEnv } from "@/config/env";
+import { DISCOVERY_FIXTURE_ACK_VALUE, getServerEnv, type ServerEnv } from "@/config/env";
 import { getCountry } from "@/modules/prospecting/geography";
 import { OSM_INDUSTRY_FILTERS, type IndustryFilters } from "@/modules/prospecting/overpass";
 import {
@@ -27,7 +27,9 @@ export function createDiscoveryProviders(env: ServerEnv = getServerEnv(), indust
       providers.push(new OverpassProvider({ endpoint: env.OVERPASS_API_URL ?? OVERPASS_DEFAULT_ENDPOINT, userAgent: env.DISCOVERY_USER_AGENT, industryFilters }));
     } else if (id === "osm_extract") {
       providers.push(new OsmExtractProvider({ industryFilters, ...(env.OSM_EXTRACT_RADIUS_KM ? { radiusKm: env.OSM_EXTRACT_RADIUS_KM } : {}) }));
-    } else if (id === "fixture") {
+    } else if (id === "fixture" && env.NODE_ENV !== "production" && env.DISCOVERY_FIXTURE_ACK === DISCOVERY_FIXTURE_ACK_VALUE) {
+      // Defence in depth: the env schema already refuses this combination, but a provider that serves fake companies
+      // must also never be built in production or without the explicit test-only acknowledgement.
       providers.push(new FixtureProvider());
     }
   }
