@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { Briefcase } from "lucide-react";
+import Image from "next/image";
+import { Bell, ChevronDown, CircleHelp, Search } from "lucide-react";
 import { Logo } from "@/components/brand/logo";
 import { ChromeNavigation, MobileNavigation } from "./chrome-navigation";
 import { selectWorkspaceAction } from "@/app/app/actions";
@@ -18,18 +19,18 @@ function WorkspaceSelect({ memberships, activeId, id, stacked = false }: { membe
 
 
 export function AppShell({ children, memberships, activeId, userName, isPlatformAdmin }: { children: React.ReactNode; memberships: readonly WorkspaceSummary[]; activeId: string | undefined; userName: string; isPlatformAdmin: boolean }) {
- return <div className="app-shell min-h-screen lg:grid lg:grid-cols-[264px_minmax(0,1fr)]">
+ return <div className="app-shell obsidian-shell">
  <a className="sr-only z-50 rounded-lg bg-card p-3 focus:not-sr-only focus:fixed focus:left-4 focus:top-4" href="#workspace-content">Skip to content</a>
- <aside className="sticky top-0 hidden h-screen flex-col border-r border-border bg-[#0d0e14] px-5 py-6 lg:flex">
-  <Link href="/app" aria-label="HOAX1G.DEV STUDIOS overview" className="mx-auto mb-6"><Logo /></Link>
-  <div className="mb-5 rounded-xl border border-border bg-surface-elevated/60 p-3"><p className="mb-2 flex items-center gap-2 text-[10px] uppercase tracking-widest text-muted-foreground"><Briefcase className="size-3" />Workspace</p><WorkspaceSelect memberships={memberships} activeId={activeId} id="desktop-workspace-switcher" stacked /></div>
-  <div className="min-h-0 flex-1 overflow-y-auto"><ChromeNavigation isPlatformAdmin={isPlatformAdmin} /></div>
-  <div className="mt-5 border-t border-border pt-4"><p className="text-xs font-medium">HOAX1G.DEV STUDIOS</p><p className="mt-1 text-[11px] leading-5 text-muted-foreground">Client acquisition for developers & agencies.</p></div>
+ <aside className="obsidian-sidebar">
+  <Link href="/app" aria-label="HOAX1G.DEV STUDIOS overview" className="obsidian-logo"><Logo /></Link>
+  <div className="obsidian-navigation"><ChromeNavigation isPlatformAdmin={isPlatformAdmin} /></div>
+  <div className="obsidian-sidebar-brand"><Image src="/branding/hoax1g-studios-emblem.png" width={124} height={124} alt="HOAX1G studio emblem" /><p>Client Acquisition Platform<br />for Developers &amp; Agencies</p></div>
  </aside>
  <div className="min-w-0">
-  <header className="sticky top-0 z-20 flex min-h-16 items-center justify-between gap-3 border-b border-border bg-background/95 px-4 backdrop-blur sm:px-6 lg:px-8">
-   <div className="flex min-w-0 items-center gap-3"><MobileNavigation isPlatformAdmin={isPlatformAdmin}><Link href="/app"><Logo /></Link><div className="mt-5"><WorkspaceSelect memberships={memberships} activeId={activeId} id="mobile-workspace-switcher" /></div></MobileNavigation><span className="hidden text-[11px] uppercase tracking-[.16em] text-muted-foreground sm:block">Client acquisition workspace</span><span className="text-xs font-semibold sm:hidden">HOAX1G.DEV</span></div>
-   <div className="flex min-w-0 items-center gap-3"><span className="hidden size-8 shrink-0 items-center justify-center rounded-full border border-primary/40 bg-primary/15 text-xs text-purple-200 sm:flex" aria-hidden="true">{userName.slice(0,1).toUpperCase()}</span><p className="max-w-36 truncate text-xs font-medium">{userName}</p><Link className="rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground hover:text-foreground" href="/api/auth/signout">Sign out</Link></div>
+  <header className="obsidian-topbar">
+   <MobileNavigation isPlatformAdmin={isPlatformAdmin}><Link href="/app"><Logo /></Link><div className="mt-5"><WorkspaceSelect memberships={memberships} activeId={activeId} id="mobile-workspace-switcher" /></div></MobileNavigation>
+   <form action="/app/discover/search" className="obsidian-global-search" role="search"><Search size={21} /><label className="sr-only" htmlFor="workspace-search">Search businesses</label><input id="workspace-search" name="q" placeholder="Search businesses, opportunities, audits..." type="search" /></form>
+   <div className="obsidian-topbar-actions"><Link className="obsidian-topbar-icon" href="/app/crm/tasks" aria-label="Review tasks"><Bell size={24} /></Link><Link className="obsidian-topbar-icon" href="/app/settings/profile" aria-label="Workspace settings and help"><CircleHelp size={23} /></Link><details className="obsidian-profile"><summary><span className="obsidian-avatar">{userName.split(/\s+/).map(part => part[0]).slice(0,2).join("").toUpperCase()}</span><span className="obsidian-user-name">{userName}</span><ChevronDown size={17} /></summary><div className="obsidian-profile-menu"><p>Active workspace</p><WorkspaceSelect memberships={memberships} activeId={activeId} id="desktop-workspace-switcher" stacked /><Link href="/app/settings/profile">Profile &amp; settings</Link><Link href="/api/auth/signout">Sign out</Link></div></details></div>
   </header>
   <div id="workspace-content" tabIndex={-1}>{children}</div>
  </div></div>;

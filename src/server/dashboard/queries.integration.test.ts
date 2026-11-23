@@ -24,6 +24,12 @@ import {
 } from "@/server/db/schema";
 
 describe("client acquisition dashboard queries", () => {
+  it("uses the South African calendar year for the YTD range", async () => {
+    const { dashboardRangeStart, parseDashboardFilters } = await import("./queries");
+    expect(parseDashboardFilters({ range: "ytd" }).range).toBe("ytd");
+    expect(dashboardRangeStart("ytd", new Date("2026-12-31T22:15:00Z"))).toEqual(new Date("2026-12-31T22:00:00Z"));
+    expect(dashboardRangeStart("ytd", new Date("2026-07-01T00:00:00Z"))).toEqual(new Date("2025-12-31T22:00:00Z"));
+  });
   it("aggregates the selected workspace, range and statuses without leaking tenant data", async () => {
     const client = new PGlite();
     const db = drizzle(client);
@@ -104,6 +110,15 @@ describe("client acquisition dashboard queries", () => {
       expect(report.priorities.pendingApprovals).toHaveLength(1);
       expect(JSON.stringify(report)).not.toContain("Private");
 
+      const { getOverviewPipeline } = await import("./overview");
+      const overview = await getOverviewPipeline(alphaScope, parseDashboardFilters({ range: "30d" }), asOf);
+      expect(overview.qualifiedLeads).toBe(1);
+      expect(overview.deals).toEqual([{ createdAt: new Date("2026-03-28T00:00:00Z"), currency: "ZAR", valueMinor: 250_000 }]);
+      const archivedOverview = await getOverviewPipeline(alphaScope, parseDashboardFilters({ range: "30d", leadStatus: "archived" }), asOf);
+      expect(archivedOverview.deals?.map(row => row.currency)).toEqual(["USD"]);
+      const historicOverview = await getOverviewPipeline(alphaScope, parseDashboardFilters({ range: "7d" }), new Date("2026-05-01T00:00:00Z"));
+      expect(historicOverview).toEqual({ qualifiedLeads: 0, deals: [] });
+
       const archived = await getClientAcquisitionDashboard(alphaScope, parseDashboardFilters({ range: "30d", leadStatus: "archived" }), asOf);
       expect(archived.metrics.activeLeads).toBe(1);
       expect(archived.metrics.pipeline).toEqual([{ currency: "USD", count: 1, valueMinor: 10_000, unvaluedCount: 0 }]);
@@ -111,6 +126,7 @@ describe("client acquisition dashboard queries", () => {
       const viewerScope = createWorkspaceScope({ workspaceId: alpha.id, userId: user.id, role: "viewer" });
       const viewer = await getClientAcquisitionDashboard(viewerScope, parseDashboardFilters({ range: "30d" }), asOf);
       expect(viewer.metrics.pipeline).toBeNull();
+      expect((await getOverviewPipeline(viewerScope, parseDashboardFilters({ range: "30d" }), asOf)).deals).toBeNull();
     } finally {
       await client.close();
     }

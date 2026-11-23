@@ -2,31 +2,34 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRef, type ReactNode } from "react";
-import { BarChart3, Bot, Briefcase, Building2, FileText, KanbanSquare, LayoutDashboard, Lightbulb, ListChecks, Menu, MessageSquareText, ScanSearch, Search, Settings, ShieldCheck, Users, X } from "lucide-react";
+import { BarChart3, Bot, Box, Building2, FileText, Home, Layers, Lightbulb, ListChecks, Megaphone, Menu, MessageSquareText, Search, Settings, ShieldCheck, Users, X } from "lucide-react";
 const links = [
-  { href: "/app", label: "Overview", icon: LayoutDashboard },
+  { href: "/app", label: "Overview", icon: Home },
   { href: "/app/discover/search", label: "Discover", icon: Search },
+  { href: "/app/audits", label: "Audits", icon: Layers },
+  { href: "/app/crm/pipeline", label: "CRM", icon: Users },
+  { href: "/app/proposals", label: "Proposals", icon: FileText },
+  { href: "/app/campaigns", label: "Campaigns", icon: Megaphone },
+  { href: "/app/kits", label: "Capability kits", icon: Box },
+  { href: "/app/reports/sales", label: "Reports", icon: BarChart3 },
+];
+const moreLinks = [
   { href: "/app/discover/opportunities", label: "Opportunities", icon: Lightbulb },
   { href: "/app/companies", label: "Companies", icon: Building2 },
-  { href: "/app/audits", label: "Audits", icon: ScanSearch },
-  { href: "/app/crm/pipeline", label: "CRM pipeline", icon: KanbanSquare },
   { href: "/app/leads", label: "Leads & contacts", icon: Users },
   { href: "/app/crm/tasks", label: "Tasks", icon: ListChecks },
-  { href: "/app/proposals", label: "Proposals", icon: FileText },
-  { href: "/app/kits", label: "Capability kits", icon: Briefcase },
-  { href: "/app/campaigns", label: "Campaigns", icon: MessageSquareText },
   { href: "/app/ai/strategy", label: "AI strategy", icon: Bot },
   { href: "/app/ai/outreach", label: "Outreach drafts", icon: MessageSquareText },
-  { href: "/app/reports/sales", label: "Reports", icon: BarChart3 },
   { href: "/app/settings/profile", label: "Settings", icon: Settings },
 ];
 export function ChromeNavigation({ isPlatformAdmin, onNavigate }: { isPlatformAdmin: boolean; onNavigate?: () => void }) {
  const pathname = usePathname();
- const items = isPlatformAdmin ? [...links, {href:"/app/admin/users",label:"User approvals",icon:ShieldCheck}] : links;
- return <nav aria-label="Application" className="grid gap-1">{items.map(({href,label,icon:Icon})=> {
+ const secondary = isPlatformAdmin ? [...moreLinks, {href:"/app/admin/users",label:"User approvals",icon:ShieldCheck}] : moreLinks;
+ const renderLink = ({href,label,icon:Icon}: typeof links[number])=> {
  const selected = href === "/app" ? pathname === href : pathname === href || pathname.startsWith(href + "/");
- return <Link key={href} href={href} onClick={()=>onNavigate?.()} aria-current={selected ? "page" : undefined} className={"flex min-h-10 items-center gap-3 rounded-lg border px-3 text-[13px] transition-colors " + (selected ? "border-primary/55 bg-primary/15 text-foreground" : "border-transparent text-muted-foreground hover:bg-white/5 hover:text-foreground")}><Icon aria-hidden="true" className="size-[17px] shrink-0" />{label}</Link>;
- })}</nav>;
+ return <Link key={href} href={href} onClick={()=>onNavigate?.()} aria-current={selected ? "page" : undefined} className="obsidian-nav-link"><Icon aria-hidden="true" />{label}</Link>;
+ };
+ return <nav aria-label="Application" className="obsidian-nav">{links.map(renderLink)}<details className="obsidian-more-nav" open={secondary.some(item => pathname === item.href || pathname.startsWith(item.href + "/")) || undefined}><summary>More tools</summary>{secondary.map(renderLink)}</details></nav>;
 }
 export function MobileNavigation({ children, isPlatformAdmin }: { children: ReactNode; isPlatformAdmin:boolean }) {
  const dialog = useRef<HTMLDialogElement>(null);

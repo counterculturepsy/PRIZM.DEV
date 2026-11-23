@@ -29,7 +29,7 @@ import {
 } from "@/server/db/schema";
 import { tenantWhere } from "@/server/db/tenant";
 
-export const dashboardRanges = ["7d", "30d", "90d", "all"] as const;
+export const dashboardRanges = ["7d", "30d", "90d", "ytd", "all"] as const;
 export const dashboardLeadStatuses = ["active", "all", "new", "qualified", "unqualified", "converted", "archived"] as const;
 export const dashboardProposalStatuses = ["all", "draft", "approved", "declined", "expired", "superseded"] as const;
 
@@ -83,8 +83,12 @@ function numeric(value: unknown): number {
   return parsed;
 }
 
-function rangeStart(range: DashboardRange, asOf: Date): Date | null {
+export function dashboardRangeStart(range: DashboardRange, asOf: Date): Date | null {
   if (range === "all") return null;
+  if (range === "ytd") {
+    const year = Number(new Intl.DateTimeFormat("en", { year: "numeric", timeZone: "Africa/Johannesburg" }).format(asOf));
+    return new Date(Date.UTC(year, 0, 1) - 2 * 60 * 60 * 1000);
+  }
   return new Date(asOf.getTime() - Number.parseInt(range, 10) * DAY_MS);
 }
 
@@ -124,7 +128,7 @@ export async function getClientAcquisitionDashboard(
 ): Promise<ClientAcquisitionDashboard> {
   if (!Number.isFinite(asOf.getTime())) throw new Error("Dashboard as-of time is invalid");
   const db = getDatabase();
-  const start = rangeStart(filters.range, asOf);
+  const start = dashboardRangeStart(filters.range, asOf);
   const leadStatus = selectedLeadStatus(filters.leadStatus);
   const proposalStatus = selectedProposalStatus(filters.proposalStatus);
 

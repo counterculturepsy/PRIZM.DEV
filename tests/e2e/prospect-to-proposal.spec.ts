@@ -145,19 +145,19 @@ test("authenticated evidence-backed prospect becomes a human-approved proposal w
   await expect(page.getByText("The newsletter input has no associated label.")).toBeVisible();
 
   await page.goto("/app");
-  await expect(page.getByRole("heading", { name: workspaceName })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Sales funnel" })).toBeVisible();
-  await expect(page.getByText("Total prospects", { exact: true })).toBeVisible();
-  await expect(page.getByText("Audited businesses", { exact: true })).toBeVisible();
-  await expect(page.getByText("Awaiting approval", { exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Import prospects" })).toHaveAttribute("href", "/app/discover/search");
-  await expect(page.getByRole("link", { name: "View opportunities" })).toHaveAttribute("href", "/app/discover/opportunities");
-  await page.getByText("Workspace filters · Last 30 days", { exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Your acquisition workspace" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Pipeline value (R)" })).toBeVisible();
+  await expect(page.getByText("Qualified leads", { exact: true })).toBeVisible();
+  await expect(page.getByText("Audits ready", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Needs your review/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Discover businesses", exact: true })).toHaveAttribute("href", "/app/discover/search");
+  await expect(page.getByRole("link", { name: "View all opportunities" })).toHaveAttribute("href", "/app/discover/opportunities");
+  await page.getByText("Workspace filters & activity", { exact: true }).click();
   await expect(page.getByLabel("Date range")).toHaveValue("30d");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ fullPage: true, path: testInfo.outputPath("dashboard-desktop.png") });
   await page.setViewportSize({ width: 412, height: 915 });
-  await expect(page.getByRole("heading", { name: "Priority actions" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Needs your review/ })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ fullPage: true, path: testInfo.outputPath("dashboard-mobile.png") });
   await page.setViewportSize({ width: 1280, height: 720 });
