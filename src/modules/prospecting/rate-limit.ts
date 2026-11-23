@@ -64,6 +64,7 @@ const reasonText: Record<RateLimitReason, string> = {
 
 export function describeRateLimit(decision: Extract<RateLimitDecision, { allowed: false }>): string {
   const minutes = Math.ceil(decision.retryAfterSeconds / 60);
-  const wait = decision.retryAfterSeconds < 90 ? `${decision.retryAfterSeconds} seconds` : `${minutes} minutes`;
+  const seconds = decision.retryAfterSeconds === 1 ? "1 second" : `${decision.retryAfterSeconds} seconds`;
+  const wait = decision.retryAfterSeconds < 90 ? seconds : `${minutes} minutes`;
   return `${reasonText[decision.reason]} Try again in about ${wait}.`;
 }

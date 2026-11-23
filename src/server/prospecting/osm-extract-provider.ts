@@ -1,13 +1,16 @@
 import { and, asc, between, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { normalizeSearchPlace, resolveIndustryTags } from "@/modules/prospecting/osm-extract";
-import type { IndustryFilters } from "@/modules/prospecting/overpass";
+import { bboxContains, getCountry, resolveCity } from "@/modules/prospecting/geography";
+import { assertKeyword, type IndustryFilters } from "@/modules/prospecting/overpass";
 import {
   DiscoveryProviderError,
   type BusinessSearchPage,
   type BusinessSearchQuery,
   type BusinessSearchRecord,
+  type CoverageDecision,
   type DiscoveryProvider,
+  type ProviderCapabilities,
   type ProviderLicense,
   type SourcedValue,
 } from "@/modules/prospecting/providers";
@@ -31,6 +34,27 @@ export const OSM_EXTRACT_LIMITS: DiscoveryLimits = {
   inProgressSeconds: 300,
   providerCooldownSeconds: 30,
 };
+
+/** Country each loaded extract belongs to. An extract whose region is not listed here is treated as covering nothing. */
+export const OSM_EXTRACT_REGION_COUNTRY: Readonly<Record<string, string>> = { "western-cape": "ZA" };
+
+type DatasetRow = typeof osmDatasets.$inferSelect;
+
+/** Pure coverage rule: right country, and a known city must lie inside the extract's bounding box. */
+export function datasetCoverage(dataset: Pick<DatasetRow, "regionKey" | "regionLabel" | "bbox">, query: BusinessSearchQuery): CoverageDecision {
+  const datasetCountry = Object.hasOwn(OSM_EXTRACT_REGION_COUNTRY, dataset.regionKey) ? OSM_EXTRACT_REGION_COUNTRY[dataset.regionKey] : undefined;
+  if (datasetCountry !== query.countryCode) {
+    const covered = datasetCountry ? (getCountry(datasetCountry)?.name ?? datasetCountry) : "no verified country";
+    return { supported: false, reason: `The loaded ${dataset.regionLabel} extract covers ${covered} only.` };
+  }
+  if (query.city) {
+    const known = resolveCity(query.countryCode, query.city).known;
+    if (known && !bboxContains(dataset.bbox, known.lat, known.lon)) {
+      return { supported: false, reason: `${known.name} is outside the loaded ${dataset.regionLabel} extract.` };
+    }
+  }
+  return { supported: true, basis: `Loaded ${dataset.regionLabel} OpenStreetMap extract` };
+}
 
 const cursorSchema = z.object({ d: z.number().finite().min(0), i: z.number().int().positive() });
 
@@ -68,32 +92,50 @@ export class OsmExtractProvider implements DiscoveryProvider {
     attribution: "© OpenStreetMap contributors",
   };
   readonly limits = OSM_EXTRACT_LIMITS;
+  readonly capabilities: ProviderCapabilities = {
+    countries: ["ZA"], region: false, city: true, industry: true, keyword: true, pagination: "cursor", dataKind: "local_dataset",
+  };
 
   constructor(private readonly options: OsmExtractProviderOptions) {}
+
+  private async loadDataset(): Promise<DatasetRow | undefined> {
+    const [dataset] = await getDatabase().select().from(osmDatasets).where(eq(osmDatasets.status, "ready"))
+      .orderBy(desc(osmDatasets.completedAt)).limit(1);
+    return dataset;
+  }
+
+  async coverage(query: BusinessSearchQuery): Promise<CoverageDecision> {
+    const dataset = await this.loadDataset();
+    if (!dataset) return { supported: false, reason: "No local OpenStreetMap extract is loaded yet." };
+    return datasetCoverage(dataset, query);
+  }
 
   async search(query: BusinessSearchQuery): Promise<BusinessSearchPage> {
     const tags = resolveIndustryTags(query.industries, this.options.industryFilters);
     if (!query.city) throw new DiscoveryProviderError("invalid_query", "Choose a city or town that is in the loaded extract.");
-    const city = normalizeSearchPlace(query.city);
+    const city = resolveCity(query.countryCode, normalizeSearchPlace(query.city));
+    const keyword = query.keyword ? assertKeyword(query.keyword) : undefined;
     const radiusKm = Math.min(MAX_RADIUS_KM, Math.max(MIN_RADIUS_KM, query.radiusKm ?? this.options.radiusKm ?? DEFAULT_RADIUS_KM));
     const pageSize = this.options.pageSize ?? DEFAULT_PAGE_SIZE;
     const cursor = query.cursor ? decodeCursor(query.cursor) : null;
     const db = getDatabase();
 
-    const [dataset] = await db.select().from(osmDatasets).where(eq(osmDatasets.status, "ready"))
-      .orderBy(desc(osmDatasets.completedAt)).limit(1);
+    const dataset = await this.loadDataset();
     if (!dataset) throw new DiscoveryProviderError("provider_unavailable", "No local OpenStreetMap extract is loaded yet.");
+    const coverage = datasetCoverage(dataset, query);
+    if (!coverage.supported) throw new DiscoveryProviderError("unsupported_location", coverage.reason);
 
+    const localityNames = sql.join(city.osmNames.map((name) => sql`${name.toLowerCase()}`), sql`, `);
     const [locality] = await db.select().from(osmLocalities).where(and(
       eq(osmLocalities.datasetId, dataset.id),
-      sql`lower(${osmLocalities.name}) = lower(${city})`,
+      sql`lower(${osmLocalities.name}) in (${localityNames})`,
     )).orderBy(
       sql`case ${osmLocalities.placeType} when 'city' then 0 when 'town' then 1 when 'suburb' then 2 when 'village' then 3 else 4 end`,
       sql`${osmLocalities.population} desc nulls last`,
       asc(osmLocalities.id),
     ).limit(1);
     if (!locality) {
-      throw new DiscoveryProviderError("invalid_query", `"${city}" is not in the loaded ${dataset.regionLabel} extract. Check the spelling or try a nearby town.`);
+      throw new DiscoveryProviderError("invalid_query", `"${city.name}" is not in the loaded ${dataset.regionLabel} extract. Check the spelling or try a nearby town.`);
     }
 
     const centerLat = sql`${locality.lat}::double precision`;
@@ -112,6 +154,7 @@ export class OsmExtractProvider implements DiscoveryProvider {
       between(osmPlaces.lat, locality.lat - latDelta, locality.lat + latDelta),
       between(osmPlaces.lon, locality.lon - lonDelta, locality.lon + lonDelta),
       sql`${distanceKm} <= ${radiusKm}::double precision`,
+      keyword ? sql`${osmPlaces.name} ilike ${`%${keyword}%`}` : undefined,
       cursor ? sql`(${distanceKm}, ${osmPlaces.id}) > (${cursor.d}::double precision, ${cursor.i}::bigint)` : undefined,
     )).orderBy(distanceKm, asc(osmPlaces.id)).limit(pageSize + 1);
 

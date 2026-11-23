@@ -66,6 +66,12 @@ export const serverEnvSchema = z
     AUDIT_USER_AGENT: z.preprocess((value) => value === "" ? undefined : value, z.string().min(10).max(300).optional()).default("PRIZMDEV/1.0"),
     AUDIT_MAX_RESPONSE_BYTES: z.preprocess((value) => value === "" || value === undefined ? undefined : Number(value), z.number().int().min(100_000).max(2_000_000).optional()).default(2_000_000),
     DISCOVERY_PROVIDER: z.preprocess((value) => value === "" ? undefined : value, z.enum(["none", "overpass", "osm_extract"]).optional()).default("none"),
+    /** Comma-separated providers to enable together. Takes precedence over DISCOVERY_PROVIDER. */
+    DISCOVERY_PROVIDERS: z.preprocess(
+      (value) => value === "" || value === undefined ? undefined : String(value).split(",").map((item) => item.trim()).filter(Boolean),
+      z.array(z.enum(["overpass", "osm_extract", "fixture"])).min(1).max(3).optional(),
+    ),
+    /** Provider id, or a comma-separated list of ids when several providers are enabled. */
     DISCOVERY_TERMS_VERIFIED_FOR: optionalString,
     DISCOVERY_USER_AGENT: z.preprocess((value) => value === "" ? undefined : value, z.string().min(20).max(300).optional()),
     OVERPASS_API_URL: z.preprocess((value) => value === "" ? undefined : value, z.url().refine((url) => url.startsWith("https://"), "OVERPASS_API_URL must use https").optional()),
@@ -88,7 +94,21 @@ export const serverEnvSchema = z
     if (value.WEBSITE_AUDIT_ENABLED && (!/(https?:\/\/|@)/.test(value.AUDIT_USER_AGENT) || /\bexample\.(com|org|net)\b/i.test(value.AUDIT_USER_AGENT))) {
       context.addIssue({ code: "custom", path: ["AUDIT_USER_AGENT"], message: "When website audits are enabled, AUDIT_USER_AGENT must identify the crawler with a real contact URL or email address (not an example.com placeholder)." });
     }
-    if (value.DISCOVERY_PROVIDER !== "none") {
+    if (value.DISCOVERY_PROVIDERS) {
+      const verified = (value.DISCOVERY_TERMS_VERIFIED_FOR ?? "").split(",").map((item) => item.trim());
+      for (const id of value.DISCOVERY_PROVIDERS) {
+        if (!verified.includes(id)) {
+          context.addIssue({ code: "custom", path: ["DISCOVERY_TERMS_VERIFIED_FOR"], message: `DISCOVERY_TERMS_VERIFIED_FOR must list ${id} (comma-separated) only after its usage terms have been read and accepted.` });
+        }
+      }
+      if (value.DISCOVERY_PROVIDERS.includes("overpass") && (!value.DISCOVERY_USER_AGENT || !/(https?:\/\/|@)/.test(value.DISCOVERY_USER_AGENT))) {
+        context.addIssue({ code: "custom", path: ["DISCOVERY_USER_AGENT"], message: "DISCOVERY_USER_AGENT must identify this application and include a contact URL or email address." });
+      }
+      if (value.DISCOVERY_PROVIDERS.includes("fixture") && (value.NODE_ENV === "production" && process.env["VERCEL_ENV"] === "production")) {
+        context.addIssue({ code: "custom", path: ["DISCOVERY_PROVIDERS"], message: "The synthetic fixture provider must never be enabled on a Vercel production deployment." });
+      }
+    }
+    if (value.DISCOVERY_PROVIDER !== "none" && !value.DISCOVERY_PROVIDERS) {
       if (value.DISCOVERY_TERMS_VERIFIED_FOR !== value.DISCOVERY_PROVIDER) {
         context.addIssue({ code: "custom", path: ["DISCOVERY_TERMS_VERIFIED_FOR"], message: "Set DISCOVERY_TERMS_VERIFIED_FOR to the provider id only after its usage terms have been read and accepted." });
       }

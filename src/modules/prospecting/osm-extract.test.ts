@@ -105,7 +105,7 @@ describe("osmium expressions and industry resolution", () => {
   it("groups the configured tags by key, plus localities", () => {
     const expressions = buildTagsFilterExpressions(OSM_INDUSTRY_FILTERS);
     expect(expressions).toContain("nwr/tourism=hotel,guest_house,hostel");
-    expect(expressions).toContain("nwr/office=estate_agent,lawyer,accountant,construction_company,engineer,travel_agent");
+    expect(expressions).toContain("nwr/office=estate_agent,lawyer,accountant,construction_company,engineer,travel_agent,it");
     expect(expressions[expressions.length - 1]).toBe("n/place=city,town,suburb,village,hamlet");
     for (const expression of expressions) expect(expression).toMatch(/^(nwr|n)\/[a-z_:]+=[a-z0-9_,]+$/);
   });

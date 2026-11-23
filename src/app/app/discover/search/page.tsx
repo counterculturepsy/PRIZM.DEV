@@ -2,10 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Building2, ExternalLink, Search } from "lucide-react";
 import { CompanyCsvImportForm } from "@/components/forms/company-csv-import-form";
-import { CompanyDiscoveryForm } from "@/components/forms/company-discovery-form";
+import { DiscoverySearchPanel, type CountryOption, type SourceOption } from "@/components/discovery/discovery-search-panel";
 import { SaveSearchForm } from "@/components/forms/save-search-form";
 import { Card } from "@/components/ui/card";
 import { Input, Label, selectClassName } from "@/components/ui/form-controls";
+import { listKnownCities, SUPPORTED_COUNTRIES } from "@/modules/prospecting/geography";
 import { hasCapability } from "@/modules/workspaces/scope";
 import { getDiscoveryStatus } from "@/server/prospecting/discovery";
 import { COMPANY_PAGE_SIZE, countCompanyMatches, getCompanyFilterOptions, listCompanies, type CompanyFilters } from "@/server/prospecting/queries";
@@ -26,6 +27,24 @@ export default async function CompanySearchPage({ searchParams }: { searchParams
   const rows = await listCompanies(scope, filters, page);
   const canWrite = hasCapability(scope, "write");
   const discovery = getDiscoveryStatus();
+  const countryOptions: CountryOption[] = SUPPORTED_COUNTRIES.map((country) => ({ code: country.code, name: country.name, regionLabel: country.regionLabel, cities: listKnownCities(country.code) }));
+  const sourceOptions: SourceOption[] = discovery.enabled
+    ? discovery.providers.map((provider) => ({
+      id: provider.id,
+      name: provider.name,
+      dataKind: provider.capabilities?.dataKind ?? null,
+      countries: provider.capabilities?.countries ?? "any",
+      region: provider.capabilities?.region ?? false,
+      keyword: provider.capabilities?.keyword ?? false,
+    }))
+    : [];
+  const requestedIndustry = first(params.dindustry);
+  const initialSearch = {
+    country: SUPPORTED_COUNTRIES.find((country) => country.code === first(params.dcountry))?.code ?? "ZA",
+    city: first(params.dcity) ?? "",
+    industry: discovery.enabled && requestedIndustry && discovery.industries.includes(requestedIndustry) ? requestedIndustry : "",
+    keyword: first(params.dkeyword) ?? "",
+  };
   const pageHref = (target: number) => {
     const search = new URLSearchParams(filters as Record<string, string>);
     if (target > 1) search.set("page", String(target));
@@ -42,7 +61,7 @@ export default async function CompanySearchPage({ searchParams }: { searchParams
     </form></Card>
     {canWrite ? <Card className="mt-4 p-5 sm:p-6"><SaveSearchForm filters={filters} /></Card> : null}
     {canWrite ? (discovery.enabled
-      ? <Card className="mt-4 p-5 sm:p-6"><p className="font-mono text-xs uppercase tracking-[0.18em] text-cyan">External discovery</p><h2 className="mt-3 text-lg font-semibold">Find companies with {discovery.providerName}</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Results are saved to this workspace with source attribution. Companies already here are matched by domain or name and city, and your existing details are never overwritten. Data {discovery.license.attribution}, under the <a className="text-primary hover:underline" href={discovery.license.url} rel="noreferrer" target="_blank">{discovery.license.name}</a>.</p><div className="mt-5"><CompanyDiscoveryForm industries={discovery.industries} /></div></Card>
+      ? <div className="mt-4"><DiscoverySearchPanel countries={countryOptions} industries={discovery.industries} initial={initialSearch} sources={sourceOptions} /></div>
       : <Card className="mt-4 p-5 sm:p-6"><p className="font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">External discovery</p><p className="mt-2 text-sm text-muted-foreground">{discovery.reason}</p></Card>) : null}
     <div className="mt-8 flex items-center justify-between"><h2 className="text-xl font-semibold">{total} {total === 1 ? "company" : "companies"}</h2><span className="text-xs text-muted-foreground">{total > COMPANY_PAGE_SIZE ? `Page ${page} of ${totalPages}` : "Workspace records"}</span></div>
     {rows.length === 0 ? <Card className="mt-4 p-8 text-center"><Building2 className="mx-auto size-8 text-muted-foreground" /><h2 className="mt-4 font-semibold">No companies match</h2><p className="mt-2 text-sm text-muted-foreground">Change the filters or import an approved CSV below.</p></Card> : <Card className="mt-4 overflow-hidden"><div className="relative overflow-x-auto"><table><thead><tr><th>Business</th><th>Industry</th><th>Location</th><th>Website</th><th><span className="sr-only">Open company</span></th></tr></thead><tbody>{rows.map(company=><tr className="hover:bg-white/5" key={company.id}><td><Link className="font-medium hover:text-primary" href={"/app/companies/"+company.id}>{company.name}</Link></td><td className="text-muted-foreground">{company.industry || "Not supplied"}</td><td className="text-muted-foreground">{[company.city,company.province,company.countryCode].filter(Boolean).join(", ")}</td><td className="text-xs text-cyan">{company.domain || "Not supplied"}</td><td><Link aria-label={"Open "+company.name} href={"/app/companies/"+company.id}><ExternalLink className="size-4" /></Link></td></tr>)}</tbody></table></div></Card>}

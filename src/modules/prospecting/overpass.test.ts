@@ -60,12 +60,13 @@ describe("Overpass query building", () => {
 describe("configured industries", () => {
   const entries = Object.entries(OSM_INDUSTRY_FILTERS);
 
-  it("offers the ten prospecting industries", () => {
+  it("offers the eleven prospecting industries", () => {
     expect(entries.map(([label]) => label)).toEqual([
       "Hotels & Accommodation", "Restaurants & Cafés", "Real Estate Agencies", "Medical & Dental Practices", "Automotive Businesses",
       "Beauty & Wellness", "Retail & E-Commerce Prospects", "Legal & Accounting Services", "Construction & Engineering", "Travel & Tourism Agencies",
+      "IT & Software Companies",
     ]);
-    expect(entries.flatMap(([, tags]) => tags)).toHaveLength(24);
+    expect(entries.flatMap(([, tags]) => tags)).toHaveLength(25);
   });
 
   it("builds a valid query for every industry and never assigns one tag to two industries", () => {

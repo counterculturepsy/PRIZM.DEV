@@ -9,6 +9,8 @@ import { getDatabase } from "@/server/db";
 import { auditLogs, savedSearches } from "@/server/db/schema";
 import { DiscoveryProviderError } from "@/modules/prospecting/providers";
 import { DiscoveryRateLimitedError, DiscoveryUnavailableError, runCompanyDiscovery } from "@/server/prospecting/discovery";
+import { previewCompanyDiscovery, saveDiscoveredCandidate } from "@/server/prospecting/discovery-search";
+import type { SaveState, SearchFailureKind, SearchState } from "./search-state";
 import { importCompanyCsv } from "@/server/prospecting/imports";
 import { getWorkspaceContext } from "@/server/workspaces/context";
 
@@ -45,7 +47,7 @@ export async function importCompanyCsvAction(_state: FormState, formData: FormDa
 export async function runCompanyDiscoveryAction(_state: FormState, formData: FormData): Promise<FormState> {
   const { scope } = await getWorkspaceContext("write");
   try {
-    const outcome = await runCompanyDiscovery(scope, { industry: text(formData, "industry"), city: text(formData, "city"), province: text(formData, "province") });
+    const outcome = await runCompanyDiscovery(scope, { countryCode: text(formData, "country"), industry: text(formData, "industry"), city: text(formData, "city"), province: text(formData, "province") });
     revalidatePath("/app");
     revalidatePath("/app/discover/search");
     const skipped = outcome.skipped > 0 ? `, ${outcome.skipped} skipped` : "";
@@ -54,6 +56,47 @@ export async function runCompanyDiscoveryAction(_state: FormState, formData: For
     if (error instanceof DiscoveryUnavailableError || error instanceof DiscoveryRateLimitedError || error instanceof DiscoveryProviderError) {
       return { status: "error", message: error.message };
     }
+    throw error;
+  }
+}
+
+const FAILURE_KIND: Readonly<Record<DiscoveryProviderError["code"], SearchFailureKind>> = {
+  invalid_query: "invalid",
+  unsupported_location: "unsupported_location",
+  provider_rate_limited: "rate_limited",
+  provider_unavailable: "provider_unavailable",
+  provider_bad_response: "provider_unavailable",
+  provider_timeout: "provider_unavailable",
+};
+
+/** Searches without saving anything. Failures come back as typed state so the UI can tell "no coverage" from "provider down". */
+export async function searchCompaniesAction(formData: FormData): Promise<SearchState> {
+  const { scope } = await getWorkspaceContext("write");
+  try {
+    const preview = await previewCompanyDiscovery(
+      scope,
+      { countryCode: text(formData, "country"), industry: text(formData, "industry"), city: text(formData, "city"), province: text(formData, "province"), keyword: text(formData, "keyword") },
+      text(formData, "cursor"),
+    );
+    return { status: "results", preview };
+  } catch (error) {
+    if (error instanceof DiscoveryUnavailableError) return { status: "error", kind: "not_enabled", message: error.message };
+    if (error instanceof DiscoveryRateLimitedError) return { status: "error", kind: "rate_limited", message: error.message, retryAfterSeconds: error.retryAfterSeconds };
+    if (error instanceof DiscoveryProviderError) return { status: "error", kind: FAILURE_KIND[error.code], message: error.message };
+    throw error;
+  }
+}
+
+/** Saves one signed search result to this workspace. The company can then be opened or turned into a lead. */
+export async function saveDiscoveredCompanyAction(token: string): Promise<SaveState> {
+  const { scope } = await getWorkspaceContext("write");
+  try {
+    const saved = await saveDiscoveredCandidate(scope, token);
+    revalidatePath("/app");
+    revalidatePath("/app/discover/search");
+    return { status: "saved", ...saved };
+  } catch (error) {
+    if (error instanceof DiscoveryProviderError) return { status: "error", message: error.message };
     throw error;
   }
 }

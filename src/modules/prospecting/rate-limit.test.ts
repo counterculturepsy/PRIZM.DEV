@@ -43,4 +43,8 @@ describe("discovery rate limiting", () => {
     if (decision.allowed) throw new Error("Expected a block");
     expect(describeRateLimit(decision)).toBe("Discovery runs need a short pause between them. Try again in about 25 seconds.");
   });
+
+  it("uses the singular for a one-second wait", () => {
+    expect(describeRateLimit({ allowed: false, reason: "too_soon", retryAfterSeconds: 1 })).toBe("Discovery runs need a short pause between them. Try again in about 1 second.");
+  });
 });

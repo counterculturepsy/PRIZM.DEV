@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { resolveCity } from "./geography";
 import { DiscoveryProviderError, type BusinessSearchQuery, type BusinessSearchRecord, type SourcedValue } from "./providers";
 
 export const OSM_MAX_RESULTS = 100;
@@ -25,12 +26,28 @@ export const OSM_INDUSTRY_FILTERS: IndustryFilters = {
   "Legal & Accounting Services": ["office=lawyer", "office=accountant"],
   "Construction & Engineering": ["office=construction_company", "office=engineer"],
   "Travel & Tourism Agencies": ["shop=travel_agency", "office=travel_agent"],
+  // taginfo (2026-11-23): office=it has 22,943 uses; documented as "an IT company".
+  "IT & Software Companies": ["office=it"],
 };
 
 export function assertPlaceName(value: string, field: string): string {
   const trimmed = value.trim();
   if (!PLACE_NAME.test(trimmed)) {
     throw new DiscoveryProviderError("invalid_query", `${field} may only contain letters, numbers, spaces, hyphens, apostrophes and full stops.`);
+  }
+  return trimmed;
+}
+
+const KEYWORD = /^[\p{L}\p{M}0-9][\p{L}\p{M}0-9 '’-]{0,58}[\p{L}\p{M}0-9]$/u;
+
+/**
+ * Validates a business-name keyword. The allowlist has no regular-expression or query metacharacters, so the value is
+ * safe to place in an Overpass `~` match and in a SQL `ilike` pattern without escaping.
+ */
+export function assertKeyword(value: string): string {
+  const trimmed = value.normalize("NFC").replace(/\s+/gu, " ").trim();
+  if (!KEYWORD.test(trimmed)) {
+    throw new DiscoveryProviderError("invalid_query", "Keyword may only contain letters, numbers, spaces, hyphens and apostrophes (2 to 60 characters).");
   }
   return trimmed;
 }
@@ -42,13 +59,15 @@ function tagFilterClause(filter: string): string {
 }
 
 /**
- * Builds an Overpass QL query for named businesses inside a South African place or province.
+ * Builds an Overpass QL query for named businesses inside a place or province of the query's country.
  * Every interpolated value is validated against a strict allowlist, so no caller input can alter the query structure.
  */
 export function buildOverpassQuery(query: BusinessSearchQuery, filters: IndustryFilters): string {
   if (!/^[A-Z]{2}$/.test(query.countryCode)) throw new DiscoveryProviderError("invalid_query", "Country code must be two capital letters.");
   const city = query.city ? assertPlaceName(query.city, "City") : undefined;
+  const cityNames = city ? resolveCity(query.countryCode, city).osmNames.map((name) => assertPlaceName(name, "City")) : [];
   const region = query.region ? assertPlaceName(query.region, "Province") : undefined;
+  const keyword = query.keyword ? assertKeyword(query.keyword) : undefined;
   if (!city && !region) throw new DiscoveryProviderError("invalid_query", "Choose a city or a province to search.");
   if (query.industries.length === 0 || query.industries.length > MAX_INDUSTRIES_PER_QUERY) {
     throw new DiscoveryProviderError("invalid_query", `Choose between 1 and ${MAX_INDUSTRIES_PER_QUERY} industries.`);
@@ -66,12 +85,24 @@ export function buildOverpassQuery(query: BusinessSearchQuery, filters: Industry
     areas.push(`area["boundary"="administrative"]["admin_level"="4"]["name"="${region}"]->.region;`);
     areaRefs.push("(area.region)");
   }
-  if (city) {
-    areas.push(`area["boundary"="administrative"]["name"="${city}"]->.place;`);
+  if (cityNames.length === 1) {
+    areas.push(`area["boundary"="administrative"]["name"="${cityNames[0]}"]->.place;`);
+    areaRefs.push("(area.place)");
+  } else if (cityNames.length > 1) {
+    // OpenStreetMap often names a city in the local language ("Hà Nội") and only tags the English name as name:en,
+    // so every known name is tried under both keys and the matches are united into one area set.
+    const sets: string[] = [];
+    cityNames.forEach((name, index) => {
+      areas.push(`area["boundary"="administrative"]["name"="${name}"]->.place${index}a;`);
+      areas.push(`area["boundary"="administrative"]["name:en"="${name}"]->.place${index}b;`);
+      sets.push(`.place${index}a;`, `.place${index}b;`);
+    });
+    areas.push(`(${sets.join(" ")})->.place;`);
     areaRefs.push("(area.place)");
   }
 
-  const statements = tagClauses.map((clause) => `  nwr${areaRefs.join("")}${clause}["name"];`);
+  const nameFilter = keyword ? `["name"~"${keyword}",i]` : `["name"]`;
+  const statements = tagClauses.map((clause) => `  nwr${areaRefs.join("")}${clause}${nameFilter};`);
   return [`[out:json][timeout:25];`, ...areas, "(", ...statements, ");", `out center tags ${OSM_MAX_RESULTS};`].join("\n");
 }
 

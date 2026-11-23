@@ -16,6 +16,8 @@ export type BusinessSearchQuery = Readonly<{
   region?: string;
   city?: string;
   industries: readonly string[];
+  /** Optional business-name filter, for providers that support it (see `ProviderCapabilities.keyword`). */
+  keyword?: string;
   cursor?: string;
   /** Search radius around the chosen place, for providers that search by distance. */
   radiusKm?: number;
@@ -48,15 +50,49 @@ export interface BusinessSearchProvider {
 
 export type ProviderLicense = Readonly<{ name: string; url: string; attribution: string }>;
 
+/** Where a provider's records come from, so the UI never presents synthetic or cached data as a live lookup. */
+export type ProviderDataKind = "local_dataset" | "live_api" | "synthetic_fixture";
+
+export type ProviderCapabilities = Readonly<{
+  /** ISO 3166-1 alpha-2 codes the provider is declared to serve, or "any" when only the data source can tell. */
+  countries: readonly string[] | "any";
+  /** Region or province narrowing is honoured. When false, a supplied region is ignored and the UI says so. */
+  region: boolean;
+  city: boolean;
+  industry: boolean;
+  /** Business-name keyword narrowing is honoured. */
+  keyword: boolean;
+  pagination: "cursor" | "none";
+  dataKind: ProviderDataKind;
+}>;
+
+export type CoverageDecision = Readonly<
+  | { supported: true; basis: string }
+  | { supported: false; reason: string }
+>;
+
 /** A provider that may be enabled by the operator once its terms are verified. */
 export interface DiscoveryProvider extends BusinessSearchProvider {
   readonly displayName: string;
   readonly license: ProviderLicense;
   /** Per-workspace run limits. Omit to use the conservative defaults meant for public APIs. */
   readonly limits?: DiscoveryLimits;
+  readonly capabilities?: ProviderCapabilities;
+  /**
+   * Decides, before any search runs, whether this provider can answer the query for its place. Providers without it
+   * are treated as covering whatever their capabilities declare. A provider must never return results for a place
+   * it does not cover.
+   */
+  coverage?(query: BusinessSearchQuery): Promise<CoverageDecision>;
 }
 
-export type DiscoveryErrorCode = "invalid_query" | "provider_rate_limited" | "provider_unavailable" | "provider_bad_response" | "provider_timeout";
+export type DiscoveryErrorCode =
+  | "invalid_query"
+  | "unsupported_location"
+  | "provider_rate_limited"
+  | "provider_unavailable"
+  | "provider_bad_response"
+  | "provider_timeout";
 
 /** Failure a user can act on; its message is safe to show and never contains credentials or raw responses. */
 export class DiscoveryProviderError extends Error {

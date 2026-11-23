@@ -173,7 +173,7 @@ describe("company discovery", () => {
     const status = discovery.getDiscoveryStatus(enabledEnv);
     expect(status.enabled).toBe(true);
     if (status.enabled) {
-      expect(status.industries).toHaveLength(10);
+      expect(status.industries).toHaveLength(11);
       expect(status.license.attribution).toBe("© OpenStreetMap contributors");
     }
     expect(discovery.getDiscoveryStatus(enabledEnv, {})).toEqual({ enabled: false, reason: "No industries are configured for discovery yet." });
