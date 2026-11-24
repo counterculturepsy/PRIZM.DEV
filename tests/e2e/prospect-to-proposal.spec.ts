@@ -153,7 +153,8 @@ test("authenticated evidence-backed prospect becomes a human-approved proposal w
   await expect(page.getByRole("link", { name: "Discover businesses", exact: true })).toHaveAttribute("href", "/app/discover/search");
   await expect(page.getByRole("link", { name: "View all opportunities" })).toHaveAttribute("href", "/app/discover/opportunities");
   await page.getByText("Workspace filters & activity", { exact: true }).click();
-  await expect(page.getByLabel("Date range")).toHaveValue("30d");
+  // The dashboard also has a `nav` labelled "Pipeline date range"; the filter is the combobox whose name starts with "Date range".
+  await expect(page.getByRole("combobox", { name: /^Date range/ })).toHaveValue("30d");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ fullPage: true, path: testInfo.outputPath("dashboard-desktop.png") });
   await page.setViewportSize({ width: 412, height: 915 });

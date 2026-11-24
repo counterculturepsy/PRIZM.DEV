@@ -1,5 +1,7 @@
 import { getServerEnv } from "@/config/env";
+import { guardTestRecipient, markTestMessage, parseTestAllowlist } from "@/modules/auth/email-test-mode";
 import { accountStatusEmail, passwordResetEmail, pendingRegistrationEmail, verificationEmail, type BrandedEmail } from "./email-templates";
+import { recordAuthSecurityEvent } from "./events";
 
 export type AuthEmailDelivery = Readonly<{
   sendVerification(input: Readonly<{ email: string; name: string | null; verificationUrl: string; expiresAt: Date }>): Promise<void>;
@@ -138,9 +140,24 @@ export function getAuthEmailDelivery(): AuthEmailDelivery | null {
     throw new Error(`Transactional email provider ${provider} is not completely configured.`);
   }
 
-  const send = provider === "brevo"
+  const providerSend = provider === "brevo"
     ? (to: string, message: BrandedEmail) => sendWithBrevo(providerKey, env.AUTH_EMAIL_FROM!, env.AUTH_EMAIL_REPLY_TO, to, message)
     : (to: string, message: BrandedEmail) => sendWithResend(providerKey, env.AUTH_EMAIL_FROM!, env.AUTH_EMAIL_REPLY_TO, to, message);
+
+  // TEST-ONLY mode (never production-ready delivery): nothing leaves the process unless the recipient is on the
+  // allowlist, and every message is visibly marked. All four message types, including the administrator
+  // notification, pass through this single function.
+  const testAllowlist = env.AUTH_EMAIL_TEST_MODE ? parseTestAllowlist(env.AUTH_EMAIL_TEST_ALLOWLIST) : null;
+  const send = async (to: string, message: BrandedEmail): Promise<void> => {
+    if (!testAllowlist) return providerSend(to, message);
+    try {
+      guardTestRecipient(testAllowlist, to);
+    } catch (error) {
+      await recordAuthSecurityEvent({ eventType: "email_test_recipient_blocked", outcome: "blocked", identifier: to });
+      throw error;
+    }
+    return providerSend(to, markTestMessage(message));
+  };
 
   return {
     sendVerification: (input) => send(input.email, verificationEmail(input)),

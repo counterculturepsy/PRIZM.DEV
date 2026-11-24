@@ -141,3 +141,50 @@ describe("serverEnvSchema", () => {
     expect(serverEnvSchema.safeParse({ ...valid, CAMPAIGN_DELIVERY_ENABLED: "true" }).success).toBe(false);
   });
 });
+
+describe("TEST-ONLY email mode configuration", () => {
+  const testMode = {
+    ...valid,
+    AUTH_EMAIL_PROVIDER: "resend",
+    RESEND_API_KEY: "re_test_key_long_enough",
+    AUTH_EMAIL_FROM: "PRIZM.DEV <onboarding@resend.dev>",
+    ADMIN_NOTIFICATION_EMAIL: "owner@example.test",
+    AUTH_EMAIL_TEST_MODE: "true",
+    AUTH_EMAIL_TEST_ALLOWLIST: "owner@example.test",
+  };
+
+  it("accepts a complete test-only configuration, including on a Preview environment", () => {
+    expect(serverEnvSchema.safeParse(testMode).success).toBe(true);
+    expect(serverEnvSchema.safeParse({ ...testMode, VERCEL_ENV: "preview" }).success).toBe(true);
+  });
+
+  it("refuses test-only mode, or the test sender, in a Production environment", () => {
+    expect(serverEnvSchema.safeParse({ ...testMode, VERCEL_ENV: "production" }).success).toBe(false);
+    expect(serverEnvSchema.safeParse({ ...testMode, AUTH_EMAIL_TEST_MODE: "false", VERCEL_ENV: "production" }).success).toBe(false);
+  });
+
+  it("refuses the resend.dev test sender unless test mode and an allowlist are on", () => {
+    expect(serverEnvSchema.safeParse({ ...testMode, AUTH_EMAIL_TEST_MODE: "false" }).success).toBe(false);
+    expect(serverEnvSchema.safeParse({ ...testMode, AUTH_EMAIL_TEST_MODE: undefined }).success).toBe(false);
+  });
+
+  it("requires the Resend provider, the test sender, a valid non-empty allowlist and an allowlisted administrator", () => {
+    expect(serverEnvSchema.safeParse({ ...testMode, AUTH_EMAIL_PROVIDER: "brevo", BREVO_API_KEY: "xkeysib-test-key-long-enough" }).success).toBe(false);
+    expect(serverEnvSchema.safeParse({ ...testMode, AUTH_EMAIL_FROM: "PRIZM.DEV <no-reply@auth.hoax1g.dev>" }).success).toBe(false);
+    expect(serverEnvSchema.safeParse({ ...testMode, AUTH_EMAIL_TEST_ALLOWLIST: "" }).success).toBe(false);
+    expect(serverEnvSchema.safeParse({ ...testMode, AUTH_EMAIL_TEST_ALLOWLIST: "not-an-email" }).success).toBe(false);
+    expect(serverEnvSchema.safeParse({ ...testMode, ADMIN_NOTIFICATION_EMAIL: "someone-else@example.test" }).success).toBe(false);
+  });
+
+  it("does not affect a normal custom-domain configuration, even on Production", () => {
+    const normal = {
+      ...valid,
+      AUTH_EMAIL_PROVIDER: "resend",
+      RESEND_API_KEY: "re_live_key_long_enough",
+      AUTH_EMAIL_FROM: "PRIZM.DEV <no-reply@auth.hoax1g.dev>",
+      ADMIN_NOTIFICATION_EMAIL: "admin@hoax1g.dev",
+    };
+    expect(serverEnvSchema.safeParse(normal).success).toBe(true);
+    expect(serverEnvSchema.safeParse({ ...normal, VERCEL_ENV: "production" }).success).toBe(true);
+  });
+});

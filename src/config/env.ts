@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { addressOf, isSenderOnTestDomain, parseTestAllowlist } from "@/modules/auth/email-test-mode";
 
 const optionalString = z.preprocess(
   (value) => (value === "" ? undefined : value),
@@ -57,6 +58,11 @@ export const serverEnvSchema = z
       (value) => (value === "" ? undefined : value),
       z.email().optional(),
     ),
+    /** TEST-ONLY email mode (see modules/auth/email-test-mode.ts): allowlisted recipients, resend.dev sender, never in Production. */
+    AUTH_EMAIL_TEST_MODE: optionalBoolean.default(false),
+    AUTH_EMAIL_TEST_ALLOWLIST: optionalString,
+    /** Set by Vercel. Used only to refuse test-only email in a Production environment. */
+    VERCEL_ENV: z.preprocess((value) => (value === "" ? undefined : value), z.enum(["production", "preview", "development"]).optional()),
     DEV_AUTH_BYPASS: optionalBoolean.default(false),
     INTEGRATION_ENCRYPTION_KEY: optionalSecret,
     OPENAI_API_KEY: optionalSecret,
@@ -156,6 +162,24 @@ export const serverEnvSchema = z
         path: [provider === "brevo" ? "BREVO_API_KEY" : "RESEND_API_KEY"],
         message: `The selected ${provider} email provider key, AUTH_EMAIL_FROM and ADMIN_NOTIFICATION_EMAIL must be configured together`,
       });
+    }
+
+    // TEST-ONLY email mode fails closed: any inconsistency stops the server from starting rather than risking a real send.
+    const testIssue = (path: string, message: string) => context.addIssue({ code: "custom", path: [path], message });
+    const testMode = value.AUTH_EMAIL_TEST_MODE;
+    const allowlist = parseTestAllowlist(value.AUTH_EMAIL_TEST_ALLOWLIST);
+    if (value.VERCEL_ENV === "production" && (testMode || isSenderOnTestDomain(value.AUTH_EMAIL_FROM))) {
+      testIssue("AUTH_EMAIL_TEST_MODE", "TEST-ONLY email mode and the resend.dev test sender are refused in a Production environment.");
+    }
+    if (testMode) {
+      if (provider !== "resend") testIssue("AUTH_EMAIL_PROVIDER", "TEST-ONLY email mode supports only the resend provider.");
+      if (!isSenderOnTestDomain(value.AUTH_EMAIL_FROM)) testIssue("AUTH_EMAIL_FROM", "TEST-ONLY email mode requires the resend.dev test sender (onboarding@resend.dev).");
+      if (allowlist.length === 0) testIssue("AUTH_EMAIL_TEST_ALLOWLIST", "TEST-ONLY email mode requires at least one allowlisted recipient.");
+      if (allowlist.some((entry) => !z.email().safeParse(entry).success)) testIssue("AUTH_EMAIL_TEST_ALLOWLIST", "Every allowlisted recipient must be a valid email address.");
+      const admin = addressOf(value.ADMIN_NOTIFICATION_EMAIL);
+      if (!admin || !allowlist.includes(admin)) testIssue("ADMIN_NOTIFICATION_EMAIL", "In TEST-ONLY email mode the administrator notification address must be on the allowlist.");
+    } else if (isSenderOnTestDomain(value.AUTH_EMAIL_FROM)) {
+      testIssue("AUTH_EMAIL_FROM", "The resend.dev test sender may only be used with AUTH_EMAIL_TEST_MODE=true and an allowlist.");
     }
   });
 

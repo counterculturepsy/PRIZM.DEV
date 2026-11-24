@@ -46,11 +46,13 @@ test("Obsidian dashboard shows workspace data, functional controls and responsiv
     }
   });
   await page.goto("/login", { timeout: 90_000 });
-  await page.getByLabel("Email", { exact: true }).fill(email);
+  await page.getByLabel("Email address", { exact: true }).fill(email);
   await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Your acquisition workspace" })).toBeVisible({ timeout: 90_000 });
-  await expect(page.getByRole("link", { name: /Apex Logistics/ })).toBeVisible();
+  // The dashboard now offers two links per company: the company profile and a separate "Review <company>" link into opportunities.
+  await expect(page.getByRole("link", { name: /^Apex Logistics/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Review Apex Logistics" })).toBeVisible();
   await expect(page.getByRole("img", { name: /Current open ZAR pipeline/ })).toBeVisible();
   for (const [width, height] of [[1600, 900], [1280, 800], [1024, 768], [768, 1024], [390, 844]] as const) {
     await page.setViewportSize({ width, height });
