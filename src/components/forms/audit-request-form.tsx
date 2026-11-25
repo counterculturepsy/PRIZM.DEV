@@ -4,12 +4,20 @@ import { useActionState } from "react";
 import { queueWebsiteAuditAction } from "@/app/app/audits/actions";
 import type { FormState } from "@/app/app/actions";
 import { FormMessage, SubmitButton } from "@/components/forms/form-parts";
+import { Button } from "@/components/ui/button";
 import { Label, selectClassName } from "@/components/ui/form-controls";
+import { WEBSITE_AUDITING_DISABLED_MESSAGE } from "@/modules/audits/availability";
 
 const initialState: FormState = { status: "idle" };
 
-export function AuditRequestForm({ companies, selectedCompanyId }: { companies: readonly { id: string; name: string; website: string | null }[]; selectedCompanyId?: string | undefined }) {
+export function AuditRequestForm({ companies, selectedCompanyId, auditingEnabled }: { companies: readonly { id: string; name: string; website: string | null }[]; selectedCompanyId?: string | undefined; auditingEnabled: boolean }) {
   const [state, action] = useActionState(queueWebsiteAuditAction, initialState);
+  if (!auditingEnabled) {
+    return <div className="grid gap-5">
+      <p className="rounded-xl border border-border bg-background p-4 text-sm leading-6" id="audit-unavailable" role="status">{WEBSITE_AUDITING_DISABLED_MESSAGE}</p>
+      <Button aria-describedby="audit-unavailable" disabled type="button">Queue website audit</Button>
+    </div>;
+  }
   const eligible = companies.filter((company): company is { id: string; name: string; website: string } => Boolean(company.website));
   return <form action={action} className="grid gap-5">
     <div className="grid gap-2"><Label htmlFor="audit-company">Company website</Label><select className={selectClassName} defaultValue={selectedCompanyId ?? ""} id="audit-company" name="companyId" required><option disabled value="">Select a company</option>{eligible.map((company) => <option key={company.id} value={company.id}>{company.name} — {company.website}</option>)}</select></div>

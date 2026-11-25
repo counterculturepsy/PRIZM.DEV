@@ -32,6 +32,7 @@ describe("website audit queue", () => {
 
     vi.resetModules();
     vi.doMock("@/server/db", () => ({ getDatabase: () => db }));
+    vi.doMock("@/server/audits/availability", () => ({ isWebsiteAuditingEnabled: () => true }));
     const { AuditRequestError, processNextAuditJob, queueWebsiteAudit } = await import("./service");
     const { AuditPolicyError } = await import("@/modules/audits/types");
     const alphaScope = createWorkspaceScope({ workspaceId: alpha.id, userId: user.id, role: "developer" });

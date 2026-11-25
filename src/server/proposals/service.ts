@@ -173,6 +173,8 @@ export async function getProposal(scope: WorkspaceScope, proposalId: string) {
     await authorize(tx, scope, "read", true);
     const [proposal] = await tx.select().from(proposals).where(and(eq(proposals.workspaceId, scope.workspaceId), eq(proposals.id, proposalId))).limit(1);
     if (!proposal) return null;
+    const [lead] = await tx.select({ sourceOpportunityId: leads.sourceOpportunityId }).from(leads)
+      .where(and(eq(leads.workspaceId, scope.workspaceId), eq(leads.id, proposal.leadId))).limit(1);
     const [versions, events] = await Promise.all([
       tx.select().from(proposalVersions).where(and(eq(proposalVersions.workspaceId, scope.workspaceId), eq(proposalVersions.proposalId, proposalId))).orderBy(desc(proposalVersions.version)),
       tx.select({ action: auditLogs.action, actorUserId: auditLogs.actorUserId, metadata: auditLogs.metadata, createdAt: auditLogs.createdAt })
@@ -192,6 +194,7 @@ export async function getProposal(scope: WorkspaceScope, proposalId: string) {
     const number = (metadata: Record<string, unknown>, key: string) => typeof metadata[key] === "number" ? metadata[key] as number : null;
     return {
       ...proposal,
+      lead: lead ?? null,
       createdBy: person(proposal.createdByUserId)!,
       approvedBy: person(proposal.approvedByUserId),
       versions: attributedVersions,

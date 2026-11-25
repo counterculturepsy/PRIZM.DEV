@@ -4,6 +4,8 @@ import { analyzeWebsiteSnapshot } from "@/modules/audits/analyzer";
 import { evaluateAuditQueueLimit } from "@/modules/audits/queue-limits";
 import { normalizeAuditUrl } from "@/modules/audits/url-policy";
 import { AuditPolicyError, type WebsiteAuditProvider } from "@/modules/audits/types";
+import { WEBSITE_AUDITING_DISABLED_MESSAGE } from "@/modules/audits/availability";
+import { isWebsiteAuditingEnabled } from "@/server/audits/availability";
 import { getDatabase } from "@/server/db";
 import { materializeOpportunityIntelligence } from "@/server/opportunities/service";
 import { auditFindings, auditJobs, auditLogs, auditPages, companies, websiteAudits, websites } from "@/server/db/schema";
@@ -13,6 +15,9 @@ export class AuditRequestError extends Error {
 }
 
 export async function queueWebsiteAudit(scope: WorkspaceScope, input: { companyId: string; authorizationConfirmed: boolean }) {
+  // Fail closed before any database access: a disabled deployment must create no website row, no audit row and consume no quota.
+  // The availability check is deliberately not caller-controlled; tests replace "@/server/audits/availability" or the environment.
+  if (!isWebsiteAuditingEnabled()) throw new AuditPolicyError("worker_disabled", WEBSITE_AUDITING_DISABLED_MESSAGE);
   if (!input.authorizationConfirmed) throw new AuditRequestError("Confirm that this public website review is authorized.");
   const db = getDatabase();
   const [company] = await db.select({ id: companies.id, website: companies.website }).from(companies).where(and(

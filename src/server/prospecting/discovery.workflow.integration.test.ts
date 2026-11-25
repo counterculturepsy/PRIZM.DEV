@@ -27,6 +27,7 @@ async function setup() {
   ]);
   vi.resetModules();
   vi.doMock("@/server/db", () => ({ getDatabase: () => db }));
+  vi.doMock("@/server/audits/availability", () => ({ isWebsiteAuditingEnabled: () => true }));
   return {
     client, db,
     discovery: await import("./discovery"),

@@ -59,6 +59,7 @@ async function setup() {
   ]);
   vi.resetModules();
   vi.doMock("@/server/db", () => ({ getDatabase: () => db }));
+  vi.doMock("@/server/audits/availability", () => ({ isWebsiteAuditingEnabled: () => true }));
   const { SafeHttpAuditProvider } = await import("./http-provider");
   const company = async (name: string, host: string) => {
     const [row] = await db.insert(companies).values({
